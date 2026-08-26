@@ -81,6 +81,13 @@ let callPeers = new Map();
 let callStartedAt = 0;
 let callTimerInterval = null;
 
+/* Server-relayed call audio (no WebRTC/TURN needed) */
+let audioCtx = null;
+let micSource = null;
+let scriptNode = null;
+let mutedFlag = false;
+let micSentFirst = false;
+
 
 /* =========================
    JOIN CHAT
@@ -879,6 +886,7 @@ cancelRecord.addEventListener(
 
 /* =========================
    TEMP CALL
+   (audio relayed through the server — no WebRTC/TURN)
 ========================= */
 
 callButton.addEventListener(
@@ -954,12 +962,14 @@ async function requestCallMic() {
 
     const stream =
       await navigator.mediaDevices.getUserMedia({
-        audio: true
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
 
 
-    // IMPORTANT: keep the stream so we can attach
-    // tracks to every peer connection in the call.
     localStream =
       stream;
 
@@ -982,9 +992,146 @@ async function requestCallMic() {
 }
 
 
+/*
+  Sets up mic capture + playback.
+  Mic: raw PCM chunks are sent to the server, which relays them
+  to the other people in the call. Playback: incoming chunks are
+  scheduled in sequence with a small pre-roll (jitter buffer).
+*/
+
+function startAudioGraph() {
+
+  if (!localStream) return;
+
+
+  try {
+
+    audioCtx =
+      new AudioContext();
+
+  } catch (error) {
+
+    audioCtx =
+      null;
+
+    return;
+
+  }
+
+
+  micSource =
+    audioCtx.createMediaStreamSource(localStream);
+
+
+  scriptNode =
+    audioCtx.createScriptProcessor(2048, 1, 1);
+
+
+  scriptNode.onaudioprocess =
+    (event) => {
+
+      const input =
+        event.inputBuffer.getChannelData(0);
+
+
+      if (!inCall || mutedFlag) return;
+
+
+      // Float32 -> Int16 PCM
+      const pcm =
+        new Int16Array(input.length);
+
+
+      for (let i = 0; i < input.length; i++) {
+
+        const s =
+          Math.max(-1, Math.min(1, input[i]));
+
+
+        pcm[i] =
+          s < 0
+            ? s * 32768
+            : s * 32767;
+
+      }
+
+
+      if (!micSentFirst) {
+
+        micSentFirst =
+          true;
+
+        markSelfConnected();
+
+      }
+
+
+      socket.emit(
+        "audio-chunk",
+        pcm.buffer
+      );
+
+    };
+
+
+  micSource.connect(scriptNode);
+  scriptNode.connect(audioCtx.destination);
+
+
+  if (audioCtx.state === "suspended") {
+
+    audioCtx.resume().catch(
+      () => { /* resumed on tap */ }
+    );
+
+  }
+
+}
+
+
+function stopAudioGraph() {
+
+  if (scriptNode) {
+
+    try { scriptNode.disconnect(); }
+    catch (error) { /* noop */ }
+
+    scriptNode = null;
+
+  }
+
+
+  if (micSource) {
+
+    try { micSource.disconnect(); }
+    catch (error) { /* noop */ }
+
+    micSource = null;
+
+  }
+
+
+  if (audioCtx) {
+
+    audioCtx.close().catch(
+      () => { /* already closed */ }
+    );
+
+    audioCtx =
+      null;
+
+  }
+
+}
+
+
 function enterCallUI() {
 
   inCall = true;
+
+  mutedFlag = false;
+
+  micSentFirst = false;
 
   callStartedAt = Date.now();
 
@@ -999,15 +1146,15 @@ function enterCallUI() {
     "Connecting…"
   );
 
-
-  updateSelfStatus();
-
   callScreen.classList.remove("hidden");
 
   incomingCall.classList.add("hidden");
 
   callRoomLabel.textContent =
     `Room ${currentRoom}`;
+
+
+  startAudioGraph();
 
 
   callTimerInterval =
@@ -1041,27 +1188,7 @@ function exitCallUI() {
   }
 
 
-  callPeers.forEach(
-    (peer) => {
-
-      if (peer.pc) {
-
-        try { peer.pc.close(); }
-        catch (error) { /* noop */ }
-
-      }
-
-
-      if (peer.audio) {
-
-        peer.audio.srcObject = null;
-
-        peer.audio.remove();
-
-      }
-
-    }
-  );
+  stopAudioGraph();
 
 
   callPeers.clear();
@@ -1073,6 +1200,10 @@ function exitCallUI() {
   incomingCall.classList.add("hidden");
 
   inCall = false;
+
+  mutedFlag = false;
+
+  micSentFirst = false;
 
 
   if (localStream) {
@@ -1188,27 +1319,32 @@ function ensurePeer(id, username) {
       );
 
 
-    const audio =
-      document.createElement("audio");
-
-
-    audio.autoplay = true;
-
-    document
-      .getElementById("call-audio-target")
-      .appendChild(audio);
-
-
     peer = {
       username: username || "Guest",
-      pc: null,
-      audio,
       row,
-      _pendingIce: []
+      nextTime: 0
     };
 
 
     callPeers.set(id, peer);
+
+  } else if (username && username !== peer.username) {
+
+    peer.username =
+      username;
+
+    const nameEl =
+      peer.row.querySelector(
+        ".call-person-name"
+      );
+
+
+    if (nameEl) {
+
+      nameEl.textContent =
+        username;
+
+    }
 
   }
 
@@ -1227,23 +1363,6 @@ function removePeer(id) {
   if (!peer) return;
 
 
-  if (peer.pc) {
-
-    try { peer.pc.close(); }
-    catch (error) { /* noop */ }
-
-  }
-
-
-  if (peer.audio) {
-
-    peer.audio.srcObject = null;
-
-    peer.audio.remove();
-
-  }
-
-
   if (peer.row) {
 
     peer.row.remove();
@@ -1252,8 +1371,6 @@ function removePeer(id) {
 
 
   callPeers.delete(id);
-
-  updateSelfStatus();
 
 }
 
@@ -1295,27 +1412,7 @@ function setPeerStatus(id, text, connected) {
 }
 
 
-/*
-  Updates my own row: "Connecting…" until at least
-  one peer is connected, then "Connected".
-*/
-
-function updateSelfStatus() {
-
-  if (!inCall) return;
-
-
-  const anyConnected =
-    [...callPeers.values()].some(
-      (peer) =>
-        peer.pc &&
-        (
-          peer.pc.connectionState === "connected" ||
-          peer.pc.iceConnectionState === "connected" ||
-          peer.pc.iceConnectionState === "completed"
-        )
-    );
-
+function markSelfConnected() {
 
   const selfRow =
     callPeople.querySelector(
@@ -1326,16 +1423,9 @@ function updateSelfStatus() {
   if (!selfRow) return;
 
 
-  selfRow.classList.toggle(
-    "connected",
-    anyConnected
-  );
+  selfRow.classList.add("connected");
 
-
-  selfRow.classList.toggle(
-    "connecting",
-    !anyConnected
-  );
+  selfRow.classList.remove("connecting");
 
 
   const status =
@@ -1347,196 +1437,9 @@ function updateSelfStatus() {
   if (status) {
 
     status.textContent =
-      anyConnected
-        ? "Connected"
-        : "Connecting…";
+      "Connected";
 
   }
-
-}
-
-
-/*
-  Central handler for a peer's WebRTC connection state.
-  Works with both connectionState (modern) and
-  iceConnectionState (older browsers) as a fallback.
-*/
-
-function handlePeerConnectionState(peerId, pc) {
-
-  const state =
-    pc.connectionState ||
-    pc.iceConnectionState;
-
-
-  if (state === "connected" || state === "completed") {
-
-    setPeerStatus(peerId, "Connected", true);
-
-  } else if (state === "disconnected") {
-
-    setPeerStatus(peerId, "Reconnecting…", false);
-
-  } else if (state === "failed") {
-
-    setPeerStatus(peerId, "Connection failed", false);
-
-  } else if (state === "closed") {
-
-    removePeer(peerId);
-
-  }
-
-
-  updateSelfStatus();
-
-}
-
-
-function createPC(peerId, username) {
-
-  const peer =
-    ensurePeer(peerId, username);
-
-
-  if (peer.pc) {
-
-    return peer.pc;
-
-  }
-
-
-  const pc =
-    new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" }
-      ]
-    });
-
-
-  peer.pc =
-    pc;
-
-
-  if (localStream) {
-
-    localStream.getTracks().forEach(
-      (track) => pc.addTrack(track, localStream)
-    );
-
-  }
-
-
-  pc.onicecandidate =
-    (event) => {
-
-      if (event.candidate) {
-
-        socket.emit(
-          "call-ice",
-          {
-            target: peerId,
-            candidate: event.candidate
-          }
-        );
-
-      }
-
-    };
-
-
-  pc.ontrack =
-    (event) => {
-
-      if (event.streams && event.streams[0]) {
-
-        peer.audio.srcObject =
-          event.streams[0];
-
-        peer.audio.play().catch(
-          () => { /* autoplay blocked — resumed on tap */ }
-        );
-
-      }
-
-    };
-
-
-  pc.onconnectionstatechange =
-    () => {
-
-      handlePeerConnectionState(peerId, pc);
-
-    };
-
-
-  pc.oniceconnectionstatechange =
-    () => {
-
-      handlePeerConnectionState(peerId, pc);
-
-    };
-
-
-  return pc;
-
-}
-
-
-async function makeOffer(peerId, username) {
-
-  try {
-
-    const pc =
-      createPC(peerId, username);
-
-
-    const offer =
-      await pc.createOffer();
-
-
-    await pc.setLocalDescription(offer);
-
-
-    socket.emit(
-      "call-offer",
-      {
-        target: peerId,
-        offer: pc.localDescription
-      }
-    );
-
-  } catch (error) {
-
-    console.warn("Call offer failed:", error);
-
-  }
-
-}
-
-
-function flushPendingIce(peerId) {
-
-  const peer =
-    callPeers.get(peerId);
-
-
-  if (!peer || !peer.pc) return;
-
-
-  peer._pendingIce.forEach(
-    (candidate) => {
-
-      peer.pc.addIceCandidate(candidate).catch(
-        () => { /* invalid candidate — ignore */ }
-      );
-
-    }
-  );
-
-
-  peer._pendingIce = [];
 
 }
 
@@ -1590,7 +1493,7 @@ socket.on(
 );
 
 
-/* Someone joined the call — I am the existing participant */
+/* Someone joined the call */
 
 socket.on(
   "call-peer-joined",
@@ -1598,118 +1501,88 @@ socket.on(
 
     if (!inCall) return;
 
-    makeOffer(id, username);
+    ensurePeer(id, username);
 
   }
 );
 
 
-/* They sent me an offer — I answer */
+/* Incoming audio chunks from the server relay */
 
 socket.on(
-  "call-offer",
-  async ({ from, offer }) => {
+  "audio-chunk",
+  ({ id, audio }) => {
 
     if (!inCall) return;
 
-    try {
+    if (!audioCtx) return;
 
-      const username =
-        callPeers.has(from)
-          ? callPeers.get(from).username
-          : "Guest";
+    const peer =
+      ensurePeer(id);
 
 
-      const pc =
-        createPC(from, username);
+    const i16 =
+      new Int16Array(audio);
 
 
-      await pc.setRemoteDescription(offer);
-
-      flushPendingIce(from);
-
-
-      const answer =
-        await pc.createAnswer();
+    const samples =
+      new Float32Array(i16.length);
 
 
-      await pc.setLocalDescription(answer);
+    for (let i = 0; i < i16.length; i++) {
+
+      samples[i] =
+        i16[i] / 32768;
+
+    }
 
 
-      socket.emit(
-        "call-answer",
-        {
-          target: from,
-          answer: pc.localDescription
-        }
+    const buffer =
+      audioCtx.createBuffer(
+        1,
+        samples.length,
+        audioCtx.sampleRate
       );
 
-    } catch (error) {
 
-      console.warn("Call answer failed:", error);
-
-    }
-
-  }
-);
+    buffer.copyToChannel(samples, 0);
 
 
-/* Answer to my offer */
-
-socket.on(
-  "call-answer",
-  async ({ from, answer }) => {
-
-    const peer =
-      callPeers.get(from);
-
-
-    if (!peer || !peer.pc) return;
-
-    try {
-
-      await peer.pc.setRemoteDescription(answer);
-
-      flushPendingIce(from);
-
-    } catch (error) {
-
-      console.warn("Could not apply answer:", error);
-
-    }
-
-  }
-);
-
-
-/* ICE candidates between peers */
-
-socket.on(
-  "call-ice",
-  ({ from, candidate }) => {
-
-    const peer =
-      callPeers.get(from);
-
-
-    if (!peer) return;
-
+    /*
+      Small pre-roll so bursts of chunks play smoothly
+      instead of stuttering.
+    */
 
     if (
-      !peer.pc ||
-      !peer.pc.remoteDescription
+      !peer.nextTime ||
+      peer.nextTime < audioCtx.currentTime + 0.05
     ) {
 
-      peer._pendingIce.push(candidate);
-
-      return;
+      peer.nextTime =
+        audioCtx.currentTime + 0.18;
 
     }
 
 
-    peer.pc.addIceCandidate(candidate).catch(
-      () => { /* invalid candidate — ignore */ }
-    );
+    const source =
+      audioCtx.createBufferSource();
+
+
+    source.buffer =
+      buffer;
+
+
+    source.connect(audioCtx.destination);
+
+
+    source.start(peer.nextTime);
+
+
+    peer.nextTime +=
+      buffer.duration;
+
+
+    setPeerStatus(id, "Connected", true);
 
   }
 );
@@ -1782,20 +1655,25 @@ muteButton.addEventListener(
 
     if (!localStream) return;
 
+    mutedFlag =
+      !mutedFlag;
+
+
     const track =
       localStream.getAudioTracks()[0];
 
 
-    if (!track) return;
+    if (track) {
 
+      track.enabled =
+        !mutedFlag;
 
-    track.enabled =
-      !track.enabled;
+    }
 
 
     muteButton.classList.toggle(
       "muted",
-      !track.enabled
+      mutedFlag
     );
 
   }
@@ -1823,6 +1701,9 @@ leaveCall.addEventListener(
         "You left the call."
       );
 
+      /* If the other side is alone now, the server
+         will tell them the call ended. */
+
     }
 
   }
@@ -1830,30 +1711,21 @@ leaveCall.addEventListener(
 
 
 /*
-  Safari/iOS sometimes blocks audio playing until the
-  user taps the screen — resume playback on any tap.
+  Some browsers (iOS) freeze playback until a tap —
+  resume the audio context on any tap.
 */
 
 document.addEventListener(
   "pointerdown",
   () => {
 
-    if (!inCall) return;
+    if (audioCtx && audioCtx.state === "suspended") {
 
+      audioCtx.resume().catch(
+        () => { /* still blocked — keep trying */ }
+      );
 
-    callPeers.forEach(
-      (peer) => {
-
-        if (peer.audio && peer.audio.srcObject) {
-
-          peer.audio.play().catch(
-            () => { /* still blocked — keep trying */ }
-          );
-
-        }
-
-      }
-    );
+    }
 
   }
 );
@@ -1897,525 +1769,3 @@ window.addEventListener(
 
   }
 );
-
-
-/* =========================
-   SYSTEM MESSAGE
-========================= */
-
-socket.on(
-  "system-message",
-  (data) => {
-
-    const messageElement =
-      document.createElement("div");
-
-
-    messageElement.className =
-      "system-message";
-
-
-    messageElement.textContent =
-      data.text;
-
-
-    messages.appendChild(
-      messageElement
-    );
-
-
-    scrollMessagesToBottom();
-  }
-);
-
-
-/* =========================
-   RESET CHAT
-========================= */
-
-socket.on(
-  "clear-chat",
-  () => {
-
-    messages.innerHTML = "";
-
-  }
-);
-
-
-resetButton.addEventListener(
-  "click",
-  () => {
-
-    const confirmed = confirm(
-      "This will clear the chat for everyone in this room. Continue?"
-    );
-
-
-    if (confirmed) {
-
-      socket.emit("reset-chat");
-
-    }
-  }
-);
-
-
-/* =========================
-   PRESENCE
-========================= */
-
-socket.on(
-  "presence-update",
-  (people) => {
-
-    updatePeopleUI(people);
-
-    updateCharacters(people);
-
-  }
-);
-
-
-/*
-  Tell server whether the user is active
-  or away.
-*/
-
-function sendPresence(status) {
-
-  if (!joinedChat) return;
-
-  socket.emit(
-    "presence-update",
-    status
-  );
-}
-
-
-/*
-  Browser tab visibility.
-*/
-
-document.addEventListener(
-  "visibilitychange",
-  () => {
-
-    if (!joinedChat) return;
-
-
-    if (document.visibilityState === "visible") {
-
-      sendPresence("active");
-
-    } else {
-
-      sendPresence("away");
-
-    }
-  }
-);
-
-
-/*
-  Window focus / blur gives us an additional
-  signal on desktop.
-*/
-
-window.addEventListener(
-  "focus",
-  () => {
-
-    if (joinedChat) {
-      sendPresence("active");
-    }
-
-  }
-);
-
-
-window.addEventListener(
-  "blur",
-  () => {
-
-    if (joinedChat) {
-      sendPresence("away");
-    }
-
-  }
-);
-
-
-/*
-  Heartbeat keeps the server aware that
-  the browser is still alive.
-*/
-
-function startPresenceHeartbeat() {
-
-  if (presenceHeartbeat) {
-    clearInterval(presenceHeartbeat);
-  }
-
-
-  presenceHeartbeat = setInterval(
-    () => {
-
-      if (
-        joinedChat &&
-        document.visibilityState === "visible"
-      ) {
-
-        socket.emit(
-          "presence-heartbeat"
-        );
-
-      }
-
-    },
-    5000
-  );
-}
-
-
-/* =========================
-   PEOPLE UI
-========================= */
-
-function updatePeopleUI(people) {
-
-  peopleCount.textContent =
-    people.length;
-
-
-  peopleList.innerHTML = "";
-
-
-  people.forEach((person) => {
-
-    const row =
-      document.createElement("div");
-
-
-    row.className =
-      "person-row";
-
-
-    const left =
-      document.createElement("div");
-
-
-    left.className =
-      "person-left";
-
-
-    const dot =
-      document.createElement("span");
-
-
-    dot.className =
-      `status-dot ${person.status}`;
-
-
-    const name =
-      document.createElement("span");
-
-
-    name.textContent =
-      person.username;
-
-
-    left.appendChild(dot);
-    left.appendChild(name);
-
-
-    const status =
-      document.createElement("span");
-
-
-    status.className =
-      `person-status ${person.status}`;
-
-
-    status.textContent =
-      person.status === "active"
-        ? "Active"
-        : "Away";
-
-
-    row.appendChild(left);
-    row.appendChild(status);
-
-
-    peopleList.appendChild(row);
-
-  });
-}
-
-
-/* =========================
-   PEOPLE PANEL
-========================= */
-
-peopleButton.addEventListener(
-  "click",
-  () => {
-
-    peoplePanel.classList.toggle(
-      "hidden"
-    );
-
-  }
-);
-
-
-closePeople.addEventListener(
-  "click",
-  () => {
-
-    peoplePanel.classList.add(
-      "hidden"
-    );
-
-  }
-);
-
-
-/* =========================
-   CHARACTER SYSTEM
-========================= */
-
-function updateCharacters(people) {
-
-  characterArea.innerHTML = "";
-
-
-  /*
-    Only show active people.
-
-    Away users disappear from the
-    character area.
-  */
-
-  const activePeople =
-    people.filter(
-      (person) =>
-        person.status === "active"
-    );
-
-
-  activePeople.forEach(
-    (person, index) => {
-
-      const character =
-        createCharacter(
-          person,
-          index,
-          activePeople.length
-        );
-
-
-      characterArea.appendChild(
-        character
-      );
-
-    }
-  );
-}
-
-
-function createCharacter(
-  person,
-  index,
-  total
-) {
-
-  const wrapper =
-    document.createElement("div");
-
-
-  wrapper.className =
-    "character-wrapper";
-
-
-  wrapper.dataset.username =
-    person.username;
-
-
-  /*
-    Spread characters across
-    the bottom of the screen.
-  */
-
-  const position =
-    total === 1
-      ? 50
-      : 20 + (
-          index / (total - 1)
-        ) * 60;
-
-
-  wrapper.style.left =
-    `${position}%`;
-
-
-  /*
-    Generate a stable visual
-    identity from the username.
-  */
-
-  const hue =
-    getUsernameHue(
-      person.username
-    );
-
-
-  wrapper.style.setProperty(
-    "--character-hue",
-    hue
-  );
-
-
-  const character =
-    document.createElement("div");
-
-
-  character.className =
-    "character";
-
-
-  /*
-    Head
-  */
-
-  const head =
-    document.createElement("div");
-
-
-  head.className =
-    "character-head";
-
-
-  /*
-    Eyes
-  */
-
-  const face =
-    document.createElement("div");
-
-
-  face.className =
-    "character-face";
-
-
-  face.innerHTML = `
-    <span></span>
-    <span></span>
-  `;
-
-
-  head.appendChild(face);
-
-
-  /*
-    Curved body
-  */
-
-  const body =
-    document.createElement("div");
-
-
-  body.className =
-    "character-body";
-
-
-  character.appendChild(head);
-
-  character.appendChild(body);
-
-
-  /*
-    Name bubble
-  */
-
-  const name =
-    document.createElement("div");
-
-
-  name.className =
-    "character-name";
-
-
-  name.textContent =
-    person.username;
-
-
-  wrapper.appendChild(character);
-
-  wrapper.appendChild(name);
-
-
-  return wrapper;
-}
-
-
-/*
-  Create a stable hue from
-  the username.
-*/
-
-function getUsernameHue(username) {
-
-  let hash = 0;
-
-
-  for (
-    let i = 0;
-    i < username.length;
-    i++
-  ) {
-
-    hash =
-      username.charCodeAt(i) +
-      ((hash << 5) - hash);
-
-  }
-
-
-  return Math.abs(hash) % 360;
-}
-
-
-/* =========================
-   SCROLL
-========================= */
-
-function scrollMessagesToBottom() {
-
-  requestAnimationFrame(
-    () => {
-
-      messages.scrollTop =
-        messages.scrollHeight;
-
-    }
-  );
-}
-
-
-/* =========================
-   HTML ESCAPING
-========================= */
-
-function escapeHTML(text) {
-
-  const div =
-    document.createElement("div");
-
-
-  div.textContent =
-    text;
-
-
-  return div.innerHTML;
-}

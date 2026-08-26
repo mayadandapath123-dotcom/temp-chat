@@ -11,6 +11,21 @@ const io = new Server(server, { maxHttpBufferSize: 5 * 1024 * 1024 });
 
 app.use(express.static("public"));
 
+/*
+  TEMP CALL — SERVER-RELAYED AUDIO
+  ---------------------------------
+  Trying to use a free external TURN relay (Cloudflare, Metered) turned
+  into an account/card/plan dead-end, so TempCall does NOT use WebRTC.
+
+  Instead, call audio is relayed through this server, exactly like voice
+  notes are: each phone captures raw PCM microphone audio, sends small
+  chunks over the Socket.IO connection, and the server forwards them only
+  to the other people currently inside the same call. It works on every
+  network (no NAT traversal needed) and needs no third-party accounts.
+
+  The trade-off: audio has a bit more latency (roughly 0.3-0.7 s, a
+  walkie-talkie feel) and passes through this server — which is fine for
+  temporary calls, and it is as "temporary" as everything else here.
 const PRESENCE_TIMEOUT = 12000;
 
 // Rooms that are currently in a temporary voice call.
@@ -234,37 +249,25 @@ io.on("connection", (socket) => {
 
 
   /*
-    TEMP CALL — WEBRTC SIGNALING
-    The browser negotiates the actual audio connections between pairs of
-    people (peer-to-peer). The server just passes short messages between
-    them — it never carries the audio itself.
+    TEMP CALL — AUDIO RELAY
+    A client sends raw PCM audio chunks here; we forward them to the
+    OTHER people currently in the same call (never to the whole room).
   */
-  socket.on("call-offer", ({ target, offer }) => {
-    if (!socket.room || !target || !offer) return;
+  socket.on("audio-chunk", (audio) => {
+    if (!socket.room || !Buffer.isBuffer(audio)) return;
+    if (audio.length > 128 * 1024) return; // safety cap
+
     const roomCall = calls.get(socket.room);
-    if (!roomCall || !roomCall.has(target)) return;
+    if (!roomCall || !roomCall.has(socket.id)) return;
 
-    io.to(target).emit("call-offer", { from: socket.id, offer });
-  });
+    const targets = [...roomCall.keys()].filter((id) => id !== socket.id);
+    if (targets.length === 0) return;
 
-  socket.on("call-answer", ({ target, answer }) => {
-    if (!socket.room || !target || !answer) return;
-    const roomCall = calls.get(socket.room);
-    if (!roomCall || !roomCall.has(target)) return;
-
-    io.to(target).emit("call-answer", { from: socket.id, answer });
-  });
-
-  socket.on("call-ice", ({ target, candidate }) => {
-    if (!socket.room || !target || !candidate) return;
-    const roomCall = calls.get(socket.room);
-    if (!roomCall || !roomCall.has(target)) return;
-
-    io.to(target).emit("call-ice", { from: socket.id, candidate });
+    io.to(targets).emit("audio-chunk", { id: socket.id, audio });
   });
 
 
-  /*
+/*
     TEMP CALL — LEAVE
   */
   socket.on("call-leave", () => {
