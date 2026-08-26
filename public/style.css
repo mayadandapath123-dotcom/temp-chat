@@ -1251,3 +1251,786 @@ button {
   }
 
 }
+
+/* =========================================
+   CALL BUTTON (header)
+========================================= */
+
+.call-button {
+  min-height: 38px;
+
+  width: 38px;
+
+  padding: 0;
+
+  border: 1px solid var(--border);
+
+  border-radius: 10px;
+
+  background:
+    rgba(255, 255, 255, 0.045);
+
+  color: #c4c4ca;
+
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  transition:
+    transform 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+
+
+.call-button:hover {
+  background:
+    rgba(139, 124, 255, 0.16);
+
+  color: var(--accent);
+}
+
+
+.call-button:active {
+  transform: scale(0.92);
+}
+
+
+/* =========================================
+   MIC BUTTON (composer)
+========================================= */
+
+.mic-button {
+  width: 42px;
+  height: 42px;
+
+  flex: 0 0 42px;
+
+  border: 0;
+
+  border-radius: 12px;
+
+  background:
+    rgba(255, 255, 255, 0.06);
+
+  color: #c9c9d0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  transition:
+    transform 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+
+
+.mic-button:hover {
+  background:
+    rgba(255, 255, 255, 0.1);
+
+  color: white;
+}
+
+
+.mic-button:active {
+  transform: scale(0.92);
+}
+
+
+/* =========================================
+   RECORDING BAR
+========================================= */
+
+.record-bar {
+  min-height: 54px;
+
+  padding: 5px 12px;
+
+  border:
+    1px solid var(--border);
+
+  border-radius: 16px;
+
+  background:
+    rgba(255, 255, 255, 0.045);
+
+  display: flex;
+  align-items: center;
+
+  gap: 10px;
+}
+
+
+.record-dot {
+  width: 10px;
+  height: 10px;
+
+  flex: 0 0 10px;
+
+  border-radius: 50%;
+
+  background: #ff5f60;
+
+  animation:
+    rec-pulse
+    1.2s
+    ease-out
+    infinite;
+}
+
+
+.record-timer {
+  font-size: 14px;
+
+  font-weight: 700;
+
+  color: white;
+
+  font-variant-numeric: tabular-nums;
+}
+
+
+.record-hint {
+  flex: 1;
+
+  font-size: 12px;
+
+  color: var(--muted);
+}
+
+
+.record-cancel {
+  min-width: 38px;
+  height: 38px;
+
+  border: 0;
+
+  border-radius: 11px;
+
+  background:
+    rgba(255, 95, 96, 0.12);
+
+  color: #ff7676;
+
+  font-size: 14px;
+}
+
+
+.record-cancel:active {
+  transform: scale(0.94);
+}
+
+
+.record-send {
+  min-height: 38px;
+
+  padding: 0 16px;
+
+  border: 0;
+
+  border-radius: 11px;
+
+  background: #2fbf71;
+
+  color: #04120a;
+
+  font-size: 13px;
+
+  font-weight: 800;
+}
+
+
+.record-send:active {
+  transform: scale(0.96);
+}
+
+
+@keyframes rec-pulse {
+
+  0% {
+    box-shadow:
+      0 0 0 0
+      rgba(255, 95, 96, 0.45);
+  }
+
+  100% {
+    box-shadow:
+      0 0 0 12px
+      rgba(255, 95, 96, 0);
+  }
+
+}
+
+
+/* =========================================
+   VOICE NOTE BUBBLES + PLAYER
+========================================= */
+
+.voice-bubble {
+  min-width: 190px;
+
+  max-width: 100%;
+
+  cursor: default;
+}
+
+
+.voice-player {
+  display: flex;
+  align-items: center;
+
+  gap: 9px;
+
+  margin: 3px 0 2px;
+
+  min-width: 0;
+}
+
+
+.voice-play {
+  width: 34px;
+  height: 34px;
+
+  flex: 0 0 34px;
+
+  border: 0;
+
+  border-radius: 50%;
+
+  background:
+    rgba(255, 255, 255, 0.1);
+
+  color: white;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  transition:
+    transform 0.12s,
+    background 0.12s;
+}
+
+
+.voice-play:hover {
+  background:
+    rgba(255, 255, 255, 0.18);
+}
+
+
+.voice-play:active {
+  transform: scale(0.9);
+}
+
+
+.voice-bar {
+  flex: 1;
+
+  height: 4px;
+
+  min-width: 50px;
+
+  border-radius: 2px;
+
+  background:
+    rgba(255, 255, 255, 0.14);
+
+  position: relative;
+
+  cursor: pointer;
+}
+
+
+.voice-progress {
+  position: absolute;
+
+  left: 0;
+  top: 0;
+  bottom: 0;
+
+  width: 0%;
+
+  border-radius: 2px;
+
+  background: var(--accent);
+}
+
+
+.voice-duration {
+  min-width: 30px;
+
+  text-align: right;
+
+  font-size: 10px;
+
+  color: #8b8b95;
+
+  font-variant-numeric: tabular-nums;
+}
+
+
+.own-message
+.voice-bar {
+  background:
+    rgba(255, 255, 255, 0.25);
+}
+
+
+.own-message
+.voice-progress {
+  background: #ffffff;
+}
+
+
+.own-message
+.voice-play {
+  background:
+    rgba(255, 255, 255, 0.2);
+}
+
+
+.own-message
+.voice-duration {
+  color:
+    rgba(255, 255, 255, 0.6);
+}
+
+
+/* =========================================
+   INCOMING CALL OVERLAY
+========================================= */
+
+.call-overlay {
+  position: fixed;
+
+  inset: 0;
+
+  z-index: 200;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 24px;
+
+  background:
+    rgba(5, 5, 9, 0.74);
+
+  backdrop-filter:
+    blur(14px);
+
+  -webkit-backdrop-filter:
+    blur(14px);
+}
+
+
+.call-card {
+  width: min(100%, 340px);
+
+  padding: 32px 24px 26px;
+
+  text-align: center;
+
+  border:
+    1px solid var(--border);
+
+  border-radius: 24px;
+
+  background:
+    linear-gradient(
+      160deg,
+      rgba(255, 255, 255, 0.06),
+      rgba(255, 255, 255, 0.02)
+    );
+
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.5);
+}
+
+
+.call-ring {
+  width: 64px;
+  height: 64px;
+
+  margin: 0 auto 20px;
+
+  border-radius: 50%;
+
+  background:
+    rgba(139, 124, 255, 0.16);
+
+  color: var(--accent);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  animation:
+    ring-pulse
+    1.4s
+    ease-in-out
+    infinite;
+}
+
+
+@keyframes ring-pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.07);
+    opacity: 0.82;
+  }
+
+}
+
+
+.call-overlay-title {
+  margin: 0;
+
+  font-size: 17px;
+
+  color: var(--text);
+}
+
+
+.call-overlay-title strong {
+  color: var(--accent);
+}
+
+
+.call-overlay-sub {
+  margin: 8px 0 0;
+
+  font-size: 10px;
+
+  letter-spacing: 0.14em;
+
+  color: var(--muted);
+}
+
+
+.call-overlay-actions {
+  margin-top: 24px;
+
+  display: flex;
+
+  gap: 12px;
+}
+
+
+.call-overlay-actions button {
+  flex: 1;
+
+  height: 48px;
+
+  border: 0;
+
+  border-radius: 14px;
+
+  font-size: 14px;
+
+  font-weight: 800;
+}
+
+
+.call-decline {
+  background:
+    rgba(255, 95, 96, 0.13);
+
+  color: #ff7676;
+
+  border:
+    1px solid
+    rgba(255, 95, 96, 0.25) !important;
+}
+
+
+.call-accept {
+  background: #2fbf71;
+
+  color: #04120a;
+}
+
+
+.call-overlay-actions button:active {
+  transform: scale(0.97);
+}
+
+
+/* =========================================
+   CALL SCREEN
+========================================= */
+
+.call-screen {
+  position: fixed;
+
+  inset: 0;
+
+  z-index: 210;
+
+  display: flex;
+  flex-direction: column;
+
+  padding:
+    calc(18px + env(safe-area-inset-top))
+    20px
+    calc(26px + var(--safe-bottom));
+
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(139, 124, 255, 0.14),
+      transparent 55%
+    ),
+    var(--bg);
+}
+
+
+.call-screen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 12px;
+}
+
+
+.call-eyebrow {
+  margin: 0 0 4px;
+
+  font-size: 10px;
+
+  font-weight: 700;
+
+  letter-spacing: 0.2em;
+
+  color: var(--accent);
+}
+
+
+.call-room-label {
+  margin: 0;
+
+  font-size: 19px;
+
+  font-weight: 800;
+
+  letter-spacing: -0.02em;
+}
+
+
+.call-timer {
+  padding: 7px 13px;
+
+  border:
+    1px solid var(--border);
+
+  border-radius: 99px;
+
+  background:
+    rgba(255, 255, 255, 0.04);
+
+  color: var(--muted);
+
+  font-size: 13px;
+
+  font-variant-numeric: tabular-nums;
+}
+
+
+.call-people {
+  flex: 1;
+
+  width: 100%;
+  max-width: 440px;
+
+  margin: 0 auto;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+
+  gap: 10px;
+}
+
+
+.call-person {
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  padding: 13px 15px;
+
+  border:
+    1px solid var(--border);
+
+  border-radius: 16px;
+
+  background:
+    rgba(255, 255, 255, 0.045);
+}
+
+
+.call-person-dot {
+  width: 9px;
+  height: 9px;
+
+  flex: 0 0 9px;
+
+  border-radius: 50%;
+
+  background: #d4a94f;
+}
+
+
+.call-person.connected
+.call-person-dot {
+  background: #61e294;
+
+  box-shadow:
+    0 0 10px
+    rgba(97, 226, 148, 0.55);
+}
+
+
+.call-person-name {
+  flex: 1;
+
+  min-width: 0;
+
+  font-size: 14px;
+
+  font-weight: 600;
+
+  overflow: hidden;
+
+  text-overflow: ellipsis;
+
+  white-space: nowrap;
+}
+
+
+.call-person-status {
+  font-size: 10px;
+
+  color: var(--muted);
+}
+
+
+.call-person.connected
+.call-person-status {
+  color: #61e294;
+}
+
+
+.call-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 22px;
+}
+
+
+.call-ctl {
+  width: 58px;
+  height: 58px;
+
+  border:
+    1px solid var(--border);
+
+  border-radius: 50%;
+
+  background:
+    rgba(255, 255, 255, 0.07);
+
+  color: white;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  position: relative;
+
+  transition:
+    transform 0.15s,
+    background 0.15s;
+}
+
+
+.call-ctl:active {
+  transform: scale(0.92);
+}
+
+
+.call-ctl.muted {
+  background:
+    rgba(255, 255, 255, 0.14);
+}
+
+
+.call-ctl.muted::after {
+  content: "";
+
+  position: absolute;
+
+  width: 32px;
+  height: 2px;
+
+  border-radius: 2px;
+
+  background: #ff5f60;
+
+  transform: rotate(-45deg);
+}
+
+
+.call-leave-btn {
+  background:
+    rgba(255, 95, 96, 0.16);
+
+  border-color:
+    rgba(255, 95, 96, 0.3);
+
+  color: #ff7676;
+}
+
+
+#call-audio-target {
+  display: none;
+}
+
+
+/* =========================================
+   SMALL PHONE TWEAKS FOR CALL / RECORD
+========================================= */
+
+@media (max-width: 360px) {
+
+  .record-hint {
+    display: none;
+  }
+
+
+  .call-ctl {
+    width: 52px;
+    height: 52px;
+  }
+
+
+  .call-button {
+    min-height: 34px;
+    width: 34px;
+  }
+
+}
+

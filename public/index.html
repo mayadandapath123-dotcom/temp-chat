@@ -121,6 +121,23 @@
 
       <div class="header-actions">
 
+        <button
+          id="call-button"
+          class="call-button"
+          type="button"
+          aria-label="Start a temp call in this room"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="15"
+            height="15"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
+          </svg>
+        </button>
+
         <span id="room-name" class="room-name"></span>
 
         <button
@@ -191,6 +208,24 @@
         />
 
         <button
+          type="button"
+          id="mic-button"
+          class="mic-button"
+          aria-label="Record a voice note"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="17"
+            height="17"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+          </svg>
+        </button>
+
+        <button
           type="submit"
           id="send-button"
           aria-label="Send message"
@@ -200,8 +235,150 @@
 
       </div>
 
+      <!-- RECORDING BAR (shown while a voice note is being recorded) -->
+
+      <div
+        id="record-bar"
+        class="record-bar hidden"
+      >
+        <span class="record-dot"></span>
+        <span id="record-timer" class="record-timer">0:00</span>
+        <span class="record-hint">Recording…</span>
+        <button
+          type="button"
+          id="cancel-record"
+          class="record-cancel"
+          aria-label="Cancel recording"
+        >
+          ✕
+        </button>
+        <button
+          type="button"
+          id="send-record"
+          class="record-send"
+        >
+          Send
+        </button>
+      </div>
+
     </form>
 
+  </div>
+
+
+  <!-- =========================
+       INCOMING CALL OVERLAY
+  ========================== -->
+
+  <div
+    id="incoming-call"
+    class="call-overlay hidden"
+  >
+    <div class="call-card">
+      <div class="call-ring">
+        <svg
+          viewBox="0 0 24 24"
+          width="26"
+          height="26"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
+        </svg>
+      </div>
+
+      <p class="call-overlay-title">
+        <strong id="incoming-name"></strong>
+        is calling…
+      </p>
+
+      <p class="call-overlay-sub">
+        TEMP CALL · ROOM
+        <span id="incoming-room"></span>
+      </p>
+
+      <div class="call-overlay-actions">
+        <button
+          id="decline-call"
+          class="call-decline"
+          type="button"
+        >
+          Decline
+        </button>
+
+        <button
+          id="accept-call"
+          class="call-accept"
+          type="button"
+        >
+          Accept
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================
+       CALL SCREEN
+  ========================== -->
+
+  <div
+    id="call-screen"
+    class="call-screen hidden"
+  >
+    <div class="call-screen-header">
+      <div>
+        <p class="call-eyebrow">TEMP CALL</p>
+        <p id="call-room-label" class="call-room-label"></p>
+      </div>
+
+      <span id="call-timer" class="call-timer">0:00</span>
+    </div>
+
+    <div
+      id="call-people"
+      class="call-people"
+    ></div>
+
+    <div class="call-controls">
+      <button
+        id="mute-button"
+        class="call-ctl"
+        type="button"
+        aria-label="Mute microphone"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="21"
+          height="21"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+          <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+        </svg>
+      </button>
+
+      <button
+        id="leave-call"
+        class="call-ctl call-leave-btn"
+        type="button"
+        aria-label="Leave the call"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="22"
+          height="22"
+          fill="currentColor"
+          aria-hidden="true"
+          style="transform: rotate(135deg)"
+        >
+          <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
+        </svg>
+      </button>
+    </div>
+
+    <div id="call-audio-target"></div>
   </div>
 
 
