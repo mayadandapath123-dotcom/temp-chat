@@ -952,12 +952,24 @@ async function requestCallMic() {
 
   try {
 
-    return await
-      navigator.mediaDevices.getUserMedia({
+    const stream =
+      await navigator.mediaDevices.getUserMedia({
         audio: true
       });
 
+
+    // IMPORTANT: keep the stream so we can attach
+    // tracks to every peer connection in the call.
+    localStream =
+      stream;
+
+
+    return stream;
+
   } catch (error) {
+
+    localStream =
+      null;
 
     localSystemMessage(
       "Microphone access was denied. Allow the mic to join the call."
@@ -984,8 +996,11 @@ function enterCallUI() {
     "me",
     `${currentUsername} (You)`,
     true,
-    "Connected"
+    "Connecting…"
   );
+
+
+  updateSelfStatus();
 
   callScreen.classList.remove("hidden");
 
@@ -1238,6 +1253,8 @@ function removePeer(id) {
 
   callPeers.delete(id);
 
+  updateSelfStatus();
+
 }
 
 
@@ -1274,6 +1291,104 @@ function setPeerStatus(id, text, connected) {
       text;
 
   }
+
+}
+
+
+/*
+  Updates my own row: "Connecting…" until at least
+  one peer is connected, then "Connected".
+*/
+
+function updateSelfStatus() {
+
+  if (!inCall) return;
+
+
+  const anyConnected =
+    [...callPeers.values()].some(
+      (peer) =>
+        peer.pc &&
+        (
+          peer.pc.connectionState === "connected" ||
+          peer.pc.iceConnectionState === "connected" ||
+          peer.pc.iceConnectionState === "completed"
+        )
+    );
+
+
+  const selfRow =
+    callPeople.querySelector(
+      '[data-peer-id="me"]'
+    );
+
+
+  if (!selfRow) return;
+
+
+  selfRow.classList.toggle(
+    "connected",
+    anyConnected
+  );
+
+
+  selfRow.classList.toggle(
+    "connecting",
+    !anyConnected
+  );
+
+
+  const status =
+    selfRow.querySelector(
+      ".call-person-status"
+    );
+
+
+  if (status) {
+
+    status.textContent =
+      anyConnected
+        ? "Connected"
+        : "Connecting…";
+
+  }
+
+}
+
+
+/*
+  Central handler for a peer's WebRTC connection state.
+  Works with both connectionState (modern) and
+  iceConnectionState (older browsers) as a fallback.
+*/
+
+function handlePeerConnectionState(peerId, pc) {
+
+  const state =
+    pc.connectionState ||
+    pc.iceConnectionState;
+
+
+  if (state === "connected" || state === "completed") {
+
+    setPeerStatus(peerId, "Connected", true);
+
+  } else if (state === "disconnected") {
+
+    setPeerStatus(peerId, "Reconnecting…", false);
+
+  } else if (state === "failed") {
+
+    setPeerStatus(peerId, "Connection failed", false);
+
+  } else if (state === "closed") {
+
+    removePeer(peerId);
+
+  }
+
+
+  updateSelfStatus();
 
 }
 
@@ -1351,27 +1466,15 @@ function createPC(peerId, username) {
   pc.onconnectionstatechange =
     () => {
 
-      const state =
-        pc.connectionState;
+      handlePeerConnectionState(peerId, pc);
+
+    };
 
 
-      if (state === "connected") {
+  pc.oniceconnectionstatechange =
+    () => {
 
-        setPeerStatus(peerId, "Connected", true);
-
-      } else if (state === "disconnected") {
-
-        setPeerStatus(peerId, "Reconnecting…", false);
-
-      } else if (state === "failed") {
-
-        setPeerStatus(peerId, "Connection failed", false);
-
-      } else if (state === "closed") {
-
-        removePeer(peerId);
-
-      }
+      handlePeerConnectionState(peerId, pc);
 
     };
 
