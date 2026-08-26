@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  />
+
+  <meta
+    name="theme-color"
+    content="#0b0b0f"
+  />
+
+  <title>TempChat</title>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <!-- =========================
+       JOIN SCREEN
+  ========================== -->
+
+  <div id="join-screen" class="screen">
+
+    <div class="join-card">
+
+      <div class="brand-mark">
+        <span></span>
+        <span></span>
+      </div>
+
+      <p class="eyebrow">TEMPORARY • REAL-TIME</p>
+
+      <h1>TempChat</h1>
+
+      <p class="join-description">
+        Talk with people in a temporary room.
+        Nothing is saved permanently.
+      </p>
+
+      <div class="join-form">
+
+        <label for="username">Username</label>
+
+        <input
+          id="username"
+          type="text"
+          placeholder="Your username"
+          maxlength="20"
+          autocomplete="nickname"
+          spellcheck="false"
+        />
+
+        <label for="room">Room code</label>
+
+        <input
+          id="room"
+          type="text"
+          placeholder="Example: BLUE123"
+          maxlength="20"
+          autocomplete="off"
+          autocapitalize="characters"
+          spellcheck="false"
+        />
+
+        <button id="join-button" class="primary-button">
+          <span>Join Chat</span>
+          <span class="button-arrow">→</span>
+        </button>
+
+      </div>
+
+      <p class="privacy-note">
+        No account required • Temporary conversations
+      </p>
+
+    </div>
+
+  </div>
+
+
+  <!-- =========================
+       CHAT SCREEN
+  ========================== -->
+
+  <div id="chat-screen" class="hidden">
+
+    <!-- HEADER -->
+
+    <header class="chat-header">
+
+      <div class="room-info">
+
+        <div class="brand-small">
+          TempChat
+        </div>
+
+        <button
+          id="people-button"
+          class="people-button"
+          type="button"
+          aria-label="Show people in this room"
+        >
+
+          <span class="people-icon">●</span>
+
+          <span id="people-count">0</span>
+
+          <span class="people-label">
+            people
+          </span>
+
+        </button>
+
+      </div>
+
+
+      <div class="header-actions">
+
+        <span id="room-name" class="room-name"></span>
+
+        <button
+          id="reset-button"
+          class="reset-button"
+          type="button"
+        >
+          Reset
+        </button>
+
+      </div>
+
+    </header>
+
+
+    <!-- PEOPLE PANEL -->
+
+    <div
+      id="people-panel"
+      class="people-panel hidden"
+    >
+
+      <div class="people-panel-header">
+        <strong>People in this room</strong>
+
+        <button
+          id="close-people"
+          type="button"
+          aria-label="Close people panel"
+        >
+          ×
+        </button>
+      </div>
+
+      <div id="people-list"></div>
+
+    </div>
+
+
+    <!-- CHAT CONTENT -->
+
+    <main id="chat-content">
+
+      <div id="messages"></div>
+
+      <!-- LIVE CHARACTER AREA -->
+
+      <div
+        id="character-area"
+        aria-hidden="true"
+      ></div>
+
+    </main>
+
+
+    <!-- MESSAGE COMPOSER -->
+
+    <form id="message-form">
+
+      <div class="composer">
+
+        <input
+          id="message-input"
+          type="text"
+          placeholder="Type a message..."
+          autocomplete="off"
+          maxlength="1000"
+        />
+
+        <button
+          type="submit"
+          id="send-button"
+          aria-label="Send message"
+        >
+          <span>↑</span>
+        </button>
+
+      </div>
+
+    </form>
+
+  </div>
+
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>
