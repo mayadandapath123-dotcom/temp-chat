@@ -26,6 +26,8 @@ app.use(express.static("public"));
   The trade-off: audio has a bit more latency (roughly 0.3-0.7 s, a
   walkie-talkie feel) and passes through this server — which is fine for
   temporary calls, and it is as "temporary" as everything else here.
+*/
+
 const PRESENCE_TIMEOUT = 12000;
 
 // Rooms that are currently in a temporary voice call.
@@ -56,6 +58,7 @@ async function broadcastPresence(room) {
   Automatically marks a user as away if their
   browser stops sending presence heartbeats.
 */
+
 function startPresenceTimeout(socket) {
   clearTimeout(socket.presenceTimeout);
 
