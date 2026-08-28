@@ -1,4 +1,9 @@
-const socket = io();
+const socket = io({
+  transports: ["websocket", "polling"],
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 1000,
+});
 
 // Join Screen Elements
 const joinScreen = document.getElementById("join-screen");
@@ -91,7 +96,7 @@ const shareNativeBtn = document.getElementById("share-native-btn");
 const toastContainer = document.getElementById("toast-container");
 
 /* =========================================
-   STATE
+   APPLICATION STATE
 ========================================= */
 
 let currentUsername = "";
@@ -116,6 +121,7 @@ let currentVoicePlayButton = null;
 let inCall = false;
 let currentCallType = "video";
 let localStream = null;
+let localMediaPromise = null;
 let isMicMuted = false;
 let isCameraOff = false;
 let currentFacingMode = "user";
@@ -123,10 +129,11 @@ let callStartedAt = 0;
 let callTimerInterval = null;
 let incomingCallData = null;
 
+// WebRTC Connections Map: peerId -> { pc, tile, video, avatar, remoteStream, username }
 const peerConnections = new Map();
 const candidateQueues = new Map();
 
-// Robust STUN + TURN config for cellular (4G/5G/VoLTE) & Render connectivity
+// Multi-Tier STUN & Free OpenRelay TURN Servers for Cross-Network WebRTC
 const RTC_CONFIG = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
@@ -134,7 +141,8 @@ const RTC_CONFIG = {
     { urls: "stun:stun2.l.google.com:19302" },
     { urls: "stun:stun3.l.google.com:19302" },
     { urls: "stun:stun4.l.google.com:19302" },
-    { urls: "stun:global.stun.twilio.com:3478" },
+    { urls: "stun:stun.cloudflare.com:3478" },
+    { urls: "stun:openrelay.metered.ca:80" },
     {
       urls: "turn:openrelay.metered.ca:80",
       username: "openrelayproject",
@@ -150,34 +158,24 @@ const RTC_CONFIG = {
       username: "openrelayproject",
       credential: "openrelayproject",
     },
-    {
-      urls: "turn:relay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:relay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
   ],
   iceCandidatePoolSize: 10,
 };
 
 /* =========================================
-   RANDOM USERNAME GENERATOR
+   RANDOM USERNAME GENERATOR (Classy)
 ========================================= */
 
 const ADJECTIVES = [
-  "Swift", "Cosmic", "Neon", "Shadow", "Mystic", "Golden", "Cyber",
-  "Silent", "Solar", "Lunar", "Frost", "Hyper", "Pixel", "Echo",
-  "Electric", "Brave", "Quiet", "Nova", "Vivid", "Turbo", "Velvet"
+  "Titan", "Amber", "Velvet", "Onyx", "Sterling", "Solar", "Aero",
+  "Nordic", "Zenith", "Cobalt", "Silver", "Vivid", "Apex", "Noble",
+  "Astral", "Sleek", "Eclipse", "Lumen", "Prime", "Quantum", "Shadow"
 ];
 
 const NOUNS = [
   "Fox", "Falcon", "Wolf", "Hawk", "Otter", "Panda", "Tiger",
   "Lynx", "Viper", "Raven", "Eagle", "Cheetah", "Dolphin", "Phoenix",
-  "Owl", "Cipher", "Badger", "Koala", "Jaguar", "Puma", "Ghost"
+  "Cipher", "Orion", "Atlas", "Vega", "Specter", "Puma", "Ghost"
 ];
 
 function generateRandomUsername() {
@@ -219,8 +217,8 @@ function initApp() {
 
     setTimeout(() => {
       joinChat();
-      showToast(`Joined Room ${cleanRoom} as ${autoUsername}!`, "success");
-    }, 400);
+      showToast(`Joined Room #${cleanRoom} as ${autoUsername}`, "success");
+    }, 350);
   } else {
     if (usernameInput && !usernameInput.value) {
       usernameInput.value = generateRandomUsername();
@@ -235,7 +233,7 @@ if (document.readyState === "loading") {
 }
 
 /* =========================================
-   JOIN ROOM (Click or Form Submit)
+   JOIN ROOM
 ========================================= */
 
 if (joinForm) {
@@ -256,7 +254,6 @@ function joinChat() {
   const rawUsername = usernameInput ? usernameInput.value.trim() : "";
   const rawRoom = roomInput ? roomInput.value.trim().toUpperCase() : "";
 
-  // Auto-generate username if empty
   let finalUsername = rawUsername;
   if (!finalUsername) {
     finalUsername = generateRandomUsername();
@@ -565,11 +562,11 @@ function closeAndViewOnceDestroy() {
     if (bubble) {
       bubble.classList.add("opened");
       const hint = bubble.querySelector(".view-once-hint");
-      if (hint) hint.textContent = "Expired • Photo deleted";
+      if (hint) hint.textContent = "Expired • Purged from memory";
     }
 
     socket.emit("photo-opened", { photoId: id });
-    showToast("Photo self-destructed & purged from memory.");
+    showToast("Photo self-destructed.");
   }
 }
 
@@ -607,7 +604,7 @@ if (shareButton) {
     if (navigator.share) {
       navigator.share({
         title: "TempChat",
-        text: `Join my private ephemeral room ${currentRoom} on TempChat!`,
+        text: `Join room #${currentRoom} on TempChat:`,
         url: getRoomShareUrl(),
       }).catch(() => openShareModal());
     } else {
@@ -624,27 +621,27 @@ if (copyShareLinkBtn) {
   copyShareLinkBtn.addEventListener("click", () => {
     navigator.clipboard.writeText(getRoomShareUrl()).then(() => {
       copyShareLinkBtn.textContent = "Copied! ✓";
-      showToast("Invite link copied to clipboard!", "success");
+      showToast("Invite link copied to clipboard", "success");
       setTimeout(() => copyShareLinkBtn.textContent = "Copy Link", 2000);
     }).catch(() => {
       if (shareLinkInput) {
         shareLinkInput.select();
         document.execCommand("copy");
       }
-      showToast("Invite link copied!");
+      showToast("Invite link copied");
     });
   });
 }
 
 if (shareWhatsappBtn) {
   shareWhatsappBtn.addEventListener("click", () => {
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(`Join my TempChat room ${currentRoom}: ${getRoomShareUrl()}`)}`, "_blank");
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(`Join my TempChat room #${currentRoom}: ${getRoomShareUrl()}`)}`, "_blank");
   });
 }
 
 if (shareTelegramBtn) {
   shareTelegramBtn.addEventListener("click", () => {
-    window.open(`https://t.me/share/url?url=${encodeURIComponent(getRoomShareUrl())}&text=${encodeURIComponent(`Join my TempChat room ${currentRoom}`)}`, "_blank");
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(getRoomShareUrl())}&text=${encodeURIComponent(`Join my TempChat room #${currentRoom}`)}`, "_blank");
   });
 }
 
@@ -653,7 +650,7 @@ if (shareNativeBtn) {
     if (navigator.share) {
       navigator.share({
         title: "TempChat",
-        text: `Join room ${currentRoom} on TempChat!`,
+        text: `Join room #${currentRoom} on TempChat:`,
         url: getRoomShareUrl(),
       }).catch(() => {});
     } else if (copyShareLinkBtn) {
@@ -663,7 +660,7 @@ if (shareNativeBtn) {
 }
 
 /* =========================================
-   VOICE NOTES (Up to 60s)
+   VOICE NOTES
 ========================================= */
 
 const VOICE_PLAY_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
@@ -805,9 +802,20 @@ if (micButton) micButton.addEventListener("click", startVoiceRecording);
 if (sendRecord) sendRecord.addEventListener("click", () => stopVoiceRecording(true));
 if (cancelRecord) cancelRecord.addEventListener("click", () => stopVoiceRecording(false));
 
-/* =========================================
-   VIDEO & VOICE CALL (WebRTC + ICE Queue)
-========================================= */
+/* =========================================================
+   ROBUST PRODUCTION WEBRTC ENGINE (Cross-Network / Internet)
+========================================================= */
+
+function extractCandidateInit(signal) {
+  if (!signal) return null;
+  if (signal.candidate && typeof signal.candidate === "object" && signal.candidate.candidate !== undefined) {
+    return signal.candidate;
+  }
+  if (signal.candidate !== undefined && typeof signal.candidate === "string") {
+    return signal;
+  }
+  return null;
+}
 
 function queueCandidate(peerId, candidate) {
   if (!candidateQueues.has(peerId)) candidateQueues.set(peerId, []);
@@ -816,64 +824,92 @@ function queueCandidate(peerId, candidate) {
 
 async function drainCandidateQueue(peerId, pc) {
   const q = candidateQueues.get(peerId);
-  if (q && q.length) {
+  if (q && q.length > 0) {
     while (q.length > 0) {
-      const cand = q.shift();
-      try {
-        if (cand && cand.candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(cand));
+      const raw = q.shift();
+      const candInit = extractCandidateInit(raw);
+      if (candInit && candInit.candidate) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candInit));
+        } catch (e) {
+          console.warn("Error adding queued ICE candidate:", e);
         }
-      } catch (e) {
-        console.warn("ICE candidate drain error:", e);
       }
     }
   }
 }
 
-if (voiceCallButton) {
-  voiceCallButton.addEventListener("click", () => {
-    if (!inCall) startCall("audio");
-  });
-}
-
-if (videoCallButton) {
-  videoCallButton.addEventListener("click", () => {
-    if (!inCall) startCall("video");
-  });
-}
-
-async function startCall(callType) {
+// Ensure local media is completely acquired BEFORE signaling
+async function setupLocalMedia(callType) {
   currentCallType = callType;
   const isVideo = callType === "video";
 
+  const constraints = {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+    video: isVideo
+      ? {
+          facingMode: currentFacingMode,
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+        }
+      : false,
+  };
+
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-      video: isVideo ? { facingMode: currentFacingMode } : false,
-    });
+    localStream = await navigator.mediaDevices.getUserMedia(constraints);
   } catch (err) {
+    console.warn("Initial getUserMedia failed, retrying with fallback audio:", err);
     if (isVideo) {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         currentCallType = "audio";
-        showToast("Camera unavailable, starting voice call.");
+        showToast("Camera unavailable. Started as Voice Call.");
       } catch (e) {
-        return showToast("Microphone & camera access denied.");
+        showToast("Microphone & camera permissions denied.");
+        throw e;
       }
     } else {
-      return showToast("Microphone access denied.");
+      showToast("Microphone permission denied.");
+      throw err;
     }
   }
 
   isMicMuted = false;
   isCameraOff = currentCallType === "audio";
-  enterCallUI();
+  return localStream;
+}
 
-  socket.emit("call-start", { callType: currentCallType });
+if (voiceCallButton) {
+  voiceCallButton.addEventListener("click", () => {
+    if (!inCall) handleStartCall("audio");
+  });
+}
+
+if (videoCallButton) {
+  videoCallButton.addEventListener("click", () => {
+    if (!inCall) handleStartCall("video");
+  });
+}
+
+async function handleStartCall(callType) {
+  try {
+    showToast("Starting call…");
+    localMediaPromise = setupLocalMedia(callType);
+    await localMediaPromise;
+
+    enterCallUI();
+    socket.emit("call-start", {
+      callType: currentCallType,
+      videoEnabled: !isCameraOff,
+      audioEnabled: !isMicMuted,
+    });
+  } catch (e) {
+    console.error("Start call error:", e);
+  }
 }
 
 socket.on("call-start", ({ by, id, callType }) => {
@@ -885,7 +921,7 @@ socket.on("call-start", ({ by, id, callType }) => {
     incomingCallTypeText.textContent = callType === "video" ? "is video calling…" : "is voice calling…";
   }
   if (incomingCallBadge) {
-    incomingCallBadge.textContent = callType === "video" ? "VIDEO CALL" : "VOICE CALL";
+    incomingCallBadge.textContent = callType === "video" ? "VIDEO" : "VOICE";
   }
   if (incomingCall) incomingCall.classList.remove("hidden");
 
@@ -900,37 +936,20 @@ if (acceptCall) {
     if (incomingCall) incomingCall.classList.add("hidden");
 
     const callType = incomingCallData.callType || "video";
-    currentCallType = callType;
-    const isVideo = callType === "video";
-
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-        video: isVideo ? { facingMode: currentFacingMode } : false,
+      showToast("Connecting…");
+      localMediaPromise = setupLocalMedia(callType);
+      await localMediaPromise;
+
+      enterCallUI();
+      socket.emit("call-join", {
+        callType: currentCallType,
+        videoEnabled: !isCameraOff,
+        audioEnabled: !isMicMuted,
       });
-    } catch (e) {
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        currentCallType = "audio";
-        showToast("Joining as voice call.");
-      } catch (err) {
-        return showToast("Permission denied.");
-      }
+    } catch (err) {
+      console.error("Accept call error:", err);
     }
-
-    isMicMuted = false;
-    isCameraOff = currentCallType === "audio";
-    enterCallUI();
-
-    socket.emit("call-join", {
-      callType: currentCallType,
-      videoEnabled: !isCameraOff,
-      audioEnabled: true,
-    });
   });
 }
 
@@ -950,7 +969,7 @@ function enterCallUI() {
   if (callTypeIndicator) {
     callTypeIndicator.textContent = currentCallType === "video" ? "📹 VIDEO CALL" : "📞 VOICE CALL";
   }
-  if (callRoomLabel) callRoomLabel.textContent = `Room ${currentRoom}`;
+  if (callRoomLabel) callRoomLabel.textContent = `Room #${currentRoom}`;
 
   if (muteButton) muteButton.classList.toggle("off", isMicMuted);
   if (cameraButton) cameraButton.classList.toggle("off", isCameraOff);
@@ -976,6 +995,7 @@ function exitCallUI() {
     localStream.getTracks().forEach((t) => t.stop());
     localStream = null;
   }
+  localMediaPromise = null;
   peerConnections.forEach(({ pc }) => {
     if (pc) pc.close();
   });
@@ -1000,11 +1020,13 @@ function createVideoTile(id, label, stream, isSelf, videoEnabled, audioEnabled) 
   const video = document.createElement("video");
   video.autoplay = true;
   video.playsInline = true;
-  video.setAttribute("playsinline", "");
-  video.setAttribute("webkit-playsinline", "");
-  video.muted = isSelf;
+  video.setAttribute("playsinline", "true");
+  video.setAttribute("webkit-playsinline", "true");
+  video.muted = isSelf; // Self is muted to prevent acoustic feedback
 
-  if (stream) video.srcObject = stream;
+  if (stream) {
+    video.srcObject = stream;
+  }
 
   const avatar = document.createElement("div");
   avatar.className = `video-tile-avatar ${videoEnabled ? "hidden" : ""}`;
@@ -1036,6 +1058,17 @@ function createVideoTile(id, label, stream, isSelf, videoEnabled, audioEnabled) 
     updateVideoGridLayout();
   }
 
+  video.onloadedmetadata = () => {
+    video.play().catch((e) => console.log("Video auto-play:", e));
+  };
+
+  // Allow one-tap to force play if mobile Safari/Chrome restricted audio
+  tile.addEventListener("click", () => {
+    if (video.paused) {
+      video.play().catch(() => {});
+    }
+  });
+
   return { tile, video, avatar, tag, micIcon, nameSpan };
 }
 
@@ -1057,21 +1090,26 @@ function updateVideoGridLayout() {
   videoGrid.classList.toggle("four-peers", count >= 4);
 }
 
-// Signaling Handlers
-socket.on("call-peers", (peers) => {
+// 1. Existing peers receive notification that a new peer joined -> They initiate offer
+socket.on("call-peer-joined", async ({ id, username, videoEnabled, audioEnabled }) => {
   if (!inCall) return;
+  if (localMediaPromise) await localMediaPromise;
+  initiatePeerConnection(id, username, true, videoEnabled, audioEnabled);
+});
+
+// 2. Newly joined peer receives list of existing peers -> Listens for offers
+socket.on("call-peers", async (peers) => {
+  if (!inCall) return;
+  if (localMediaPromise) await localMediaPromise;
   peers.forEach((p) => {
     initiatePeerConnection(p.id, p.username, false, p.videoEnabled, p.audioEnabled);
   });
 });
 
-socket.on("call-peer-joined", ({ id, username, videoEnabled, audioEnabled }) => {
-  if (!inCall) return;
-  initiatePeerConnection(id, username, true, videoEnabled, audioEnabled);
-});
-
+// 3. Signaling message router
 socket.on("call-signal", async ({ from, signal }) => {
-  if (!inCall) return;
+  if (!inCall || !signal) return;
+  if (localMediaPromise) await localMediaPromise;
 
   let peerObj = peerConnections.get(from);
   if (!peerObj) {
@@ -1083,8 +1121,10 @@ socket.on("call-signal", async ({ from, signal }) => {
     if (signal.type === "offer") {
       await pc.setRemoteDescription(new RTCSessionDescription(signal));
       await drainCandidateQueue(from, pc);
+
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
+
       socket.emit("call-signal", {
         to: from,
         signal: pc.localDescription,
@@ -1092,18 +1132,22 @@ socket.on("call-signal", async ({ from, signal }) => {
     } else if (signal.type === "answer") {
       await pc.setRemoteDescription(new RTCSessionDescription(signal));
       await drainCandidateQueue(from, pc);
-    } else if (signal.type === "candidate" || signal.candidate) {
-      const c = signal.candidate || signal;
-      if (pc.remoteDescription && pc.remoteDescription.type) {
-        if (c && c.candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
+    } else {
+      const candInit = extractCandidateInit(signal);
+      if (candInit) {
+        if (pc.remoteDescription && pc.remoteDescription.type) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candInit));
+          } catch (e) {
+            console.warn("ICE candidate add failed:", e);
+          }
+        } else {
+          queueCandidate(from, candInit);
         }
-      } else {
-        queueCandidate(from, c);
       }
     }
   } catch (err) {
-    console.warn("WebRTC signal error:", err);
+    console.warn("WebRTC signal handling error:", err);
   }
 });
 
@@ -1138,30 +1182,42 @@ function initiatePeerConnection(peerId, username, isInitiator, videoEnabled, aud
   if (peerConnections.has(peerId)) return peerConnections.get(peerId);
 
   const pc = new RTCPeerConnection(RTC_CONFIG);
+  const remoteStream = new MediaStream();
+
   const { tile, video, avatar, tag, micIcon, nameSpan } = createVideoTile(
     peerId,
     username,
-    null,
+    remoteStream,
     false,
     videoEnabled,
     audioEnabled
   );
 
+  // Add all local stream tracks to the connection
   if (localStream) {
-    localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+    localStream.getTracks().forEach((track) => {
+      pc.addTrack(track, localStream);
+    });
   }
 
+  // Explicitly add transceivers to guarantee bi-directional video & audio
+  if (pc.getTransceivers().length === 0) {
+    pc.addTransceiver("audio", { direction: "sendrecv" });
+    pc.addTransceiver("video", { direction: "sendrecv" });
+  }
+
+  // Bind incoming tracks to persistent remote stream
   pc.ontrack = (event) => {
-    console.log("Remote track received:", peerId, event.track.kind);
-    if (event.streams && event.streams[0]) {
-      video.srcObject = event.streams[0];
-    } else {
-      let stream = video.srcObject || new MediaStream();
-      video.srcObject = stream;
-      stream.addTrack(event.track);
+    if (event.track) {
+      const exists = remoteStream.getTracks().some((t) => t.id === event.track.id);
+      if (!exists) {
+        remoteStream.addTrack(event.track);
+      }
+      if (event.track.kind === "video") {
+        avatar.classList.add("hidden");
+      }
+      video.play().catch((e) => console.log("Remote video play:", e));
     }
-    avatar.classList.add("hidden");
-    video.play().catch(() => {});
   };
 
   pc.onicecandidate = (event) => {
@@ -1170,7 +1226,12 @@ function initiatePeerConnection(peerId, username, isInitiator, videoEnabled, aud
         to: peerId,
         signal: {
           type: "candidate",
-          candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
+          candidate: event.candidate.toJSON ? event.candidate.toJSON() : {
+            candidate: event.candidate.candidate,
+            sdpMid: event.candidate.sdpMid,
+            sdpMLineIndex: event.candidate.sdpMLineIndex,
+            usernameFragment: event.candidate.usernameFragment,
+          },
         },
       });
     }
@@ -1180,10 +1241,15 @@ function initiatePeerConnection(peerId, username, isInitiator, videoEnabled, aud
     console.log(`ICE Connection [${peerId}]:`, pc.iceConnectionState);
     if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
       avatar.classList.add("hidden");
+      video.play().catch(() => {});
+    } else if (pc.iceConnectionState === "failed") {
+      try {
+        pc.restartIce();
+      } catch (e) {}
     }
   };
 
-  const peerObj = { pc, tile, video, avatar, tag, micIcon, nameSpan, username };
+  const peerObj = { pc, tile, video, avatar, tag, micIcon, nameSpan, username, remoteStream };
   peerConnections.set(peerId, peerObj);
 
   if (isInitiator) {
@@ -1305,7 +1371,7 @@ if (leaveCall) {
 }
 
 /* =========================================
-   SYSTEM MESSAGE & CHAT RESET
+   SYSTEM MESSAGES & CHAT RESET
 ========================================= */
 
 socket.on("system-message", (d) => localSystemMessage(d.text));
@@ -1321,7 +1387,7 @@ function localSystemMessage(text) {
 
 socket.on("clear-chat", () => {
   if (messages) messages.innerHTML = "";
-  showToast("Chat was reset.");
+  showToast("Chat cleared.");
 });
 
 if (resetButton) {
@@ -1434,7 +1500,8 @@ function getUsernameHue(username) {
   for (let i = 0; i < username.length; i++) {
     hash = username.charCodeAt(i) + ((hash << 5) - hash);
   }
-  return Math.abs(hash) % 360;
+  const hues = [42, 48, 55, 38, 210, 220, 160, 25];
+  return hues[Math.abs(hash) % hues.length];
 }
 
 function scrollMessagesToBottom() {
@@ -1461,7 +1528,7 @@ function showToast(message, type = "info") {
     toast.style.transform = "translateY(-10px)";
     toast.style.transition = "all 0.25s ease";
     setTimeout(() => toast.remove(), 250);
-  }, 3200);
+  }, 3000);
 }
 
 window.addEventListener("beforeunload", () => {
@@ -1474,3 +1541,4 @@ socket.on("disconnect", () => {
     exitCallUI();
   }
 });
+
