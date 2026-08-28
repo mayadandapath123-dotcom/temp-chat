@@ -1,100 +1,221 @@
 const socket = io();
 
-
-/* =========================
+/* =========================================
    ELEMENTS
-========================= */
+========================================= */
 
+// Join Screen
 const joinScreen = document.getElementById("join-screen");
 const chatScreen = document.getElementById("chat-screen");
-
 const usernameInput = document.getElementById("username");
 const roomInput = document.getElementById("room");
-
 const joinButton = document.getElementById("join-button");
+const randomizeBtn = document.getElementById("randomize-btn");
+const inviteBanner = document.getElementById("invite-banner");
+const invitedRoomCode = document.getElementById("invited-room-code");
 
+// Header
 const roomName = document.getElementById("room-name");
-
-const messages = document.getElementById("messages");
-
-const messageForm = document.getElementById("message-form");
-const messageInput = document.getElementById("message-input");
-
-const resetButton = document.getElementById("reset-button");
-
 const peopleButton = document.getElementById("people-button");
 const peopleCount = document.getElementById("people-count");
-
 const peoplePanel = document.getElementById("people-panel");
 const closePeople = document.getElementById("close-people");
 const peopleList = document.getElementById("people-list");
+const panelShareBtn = document.getElementById("panel-share-btn");
+const shareButton = document.getElementById("share-button");
+const voiceCallButton = document.getElementById("voice-call-button");
+const videoCallButton = document.getElementById("video-call-button");
+const resetButton = document.getElementById("reset-button");
 
+// Chat & Character Area
+const messages = document.getElementById("messages");
 const characterArea = document.getElementById("character-area");
 
+// Composer
+const messageForm = document.getElementById("message-form");
+const messageInput = document.getElementById("message-input");
+const sendButton = document.getElementById("send-button");
 const micButton = document.getElementById("mic-button");
+const photoButton = document.getElementById("photo-button");
+const photoFileInput = document.getElementById("photo-file-input");
+
+// Photo Preview Bar
+const photoPreviewBar = document.getElementById("photo-preview-bar");
+const previewImg = document.getElementById("preview-img");
+const removePhotoBtn = document.getElementById("remove-photo-btn");
+const viewOnceToggle = document.getElementById("view-once-toggle");
+const photoCaptionInput = document.getElementById("photo-caption-input");
+const sendPhotoBtn = document.getElementById("send-photo-btn");
+
+// Voice Recording Bar
 const recordBar = document.getElementById("record-bar");
 const recordTimer = document.getElementById("record-timer");
 const cancelRecord = document.getElementById("cancel-record");
 const sendRecord = document.getElementById("send-record");
 
-const callButton = document.getElementById("call-button");
+// Incoming Call Overlay
 const incomingCall = document.getElementById("incoming-call");
 const incomingName = document.getElementById("incoming-name");
 const incomingRoom = document.getElementById("incoming-room");
+const incomingCallTypeText = document.getElementById("incoming-call-type-text");
+const incomingCallBadge = document.getElementById("incoming-call-badge");
 const acceptCall = document.getElementById("accept-call");
 const declineCall = document.getElementById("decline-call");
+
+// Call Screen
 const callScreen = document.getElementById("call-screen");
-const callPeople = document.getElementById("call-people");
-const callTimer = document.getElementById("call-timer");
+const callTypeIndicator = document.getElementById("call-type-indicator");
 const callRoomLabel = document.getElementById("call-room-label");
+const callTimer = document.getElementById("call-timer");
+const callFullscreenBtn = document.getElementById("call-fullscreen-btn");
+const videoGrid = document.getElementById("video-grid");
 const muteButton = document.getElementById("mute-button");
+const cameraButton = document.getElementById("camera-button");
+const flipCameraButton = document.getElementById("flip-camera-button");
 const leaveCall = document.getElementById("leave-call");
 
+// View-Once Modal
+const viewOnceModal = document.getElementById("view-once-modal");
+const viewOnceImage = document.getElementById("view-once-image");
+const viewOnceTimer = document.getElementById("view-once-timer");
+const viewOnceCaption = document.getElementById("view-once-caption");
+const closeViewOnceBtn = document.getElementById("close-view-once-btn");
 
-/* =========================
+// Share Modal
+const shareModal = document.getElementById("share-modal");
+const closeShareModal = document.getElementById("close-share-modal");
+const shareRoomCodeDisplay = document.getElementById("share-room-code-display");
+const shareLinkInput = document.getElementById("share-link-input");
+const copyShareLinkBtn = document.getElementById("copy-share-link-btn");
+const shareWhatsappBtn = document.getElementById("share-whatsapp-btn");
+const shareTelegramBtn = document.getElementById("share-telegram-btn");
+const shareNativeBtn = document.getElementById("share-native-btn");
+
+// Toast
+const toastContainer = document.getElementById("toast-container");
+
+
+/* =========================================
    STATE
-========================= */
+========================================= */
 
 let currentUsername = "";
 let currentRoom = "";
-
 let joinedChat = false;
-
 let presenceHeartbeat = null;
 
-/* Voice note state */
+// Photo state
+let pendingPhotoDataUrl = null;
+let isViewOnceMode = true;
+const ephemeralPhotoStore = new Map(); // photoId -> photoPayload
+let activeViewOnceId = null;
+let viewOnceCountdownInterval = null;
 
+// Voice note state
 let mediaRecorder = null;
 let recordedChunks = [];
 let recordTimerInterval = null;
 let recordStartedAt = 0;
 let recordSendOnStop = false;
-
 let currentVoiceAudio = null;
 let currentVoicePlayButton = null;
 
-/* Temp call state */
-
+// Call & WebRTC state
 let inCall = false;
+let currentCallType = "video"; // "video" or "audio"
 let localStream = null;
-let callPeers = new Map();
+let isMicMuted = false;
+let isCameraOff = false;
+let currentFacingMode = "user"; // 'user' or 'environment'
 let callStartedAt = 0;
 let callTimerInterval = null;
+let incomingCallData = null;
 
-/* Server-relayed call audio (no WebRTC/TURN needed) */
-let audioCtx = null;
-let micSource = null;
-let scriptNode = null;
-let mutedFlag = false;
-let micSentFirst = false;
+// Peer connections map: peerId -> { pc, tile, videoEl, username, isVideoOn, isAudioOn }
+const peerConnections = new Map();
+
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
+  ],
+};
 
 
-/* =========================
+/* =========================================
+   RANDOM USERNAME GENERATOR
+========================================= */
+
+const ADJECTIVES = [
+  "Swift", "Cosmic", "Neon", "Shadow", "Mystic", "Golden", "Cyber",
+  "Silent", "Solar", "Lunar", "Frost", "Hyper", "Pixel", "Echo",
+  "Electric", "Brave", "Quiet", "Nova", "Vivid", "Turbo", "Velvet",
+  "Zen", "Sonic", "Crystal", "Pulse", "Quantum", "Apex", "Astro"
+];
+
+const NOUNS = [
+  "Fox", "Falcon", "Wolf", "Hawk", "Otter", "Panda", "Tiger",
+  "Lynx", "Viper", "Raven", "Eagle", "Cheetah", "Dolphin", "Phoenix",
+  "Owl", "Cipher", "Badger", "Koala", "Jaguar", "Puma", "Falcon",
+  "Drift", "Ghost", "Shade", "Vortex", "Rider", "Blaze", "Spark"
+];
+
+function generateRandomUsername() {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+  const num = Math.floor(Math.random() * 90) + 10;
+  return `${adj}${noun}${num}`;
+}
+
+randomizeBtn.addEventListener("click", () => {
+  usernameInput.value = generateRandomUsername();
+  usernameInput.focus();
+});
+
+
+/* =========================================
+   SEAMLESS INVITE LINK DETECTION & AUTO-JOIN
+========================================= */
+
+window.addEventListener("DOMContentLoaded", () => {
+  // Check URL parameters for ?room=... or ?join=... or hash #...
+  const urlParams = new URLSearchParams(window.location.search);
+  let roomFromUrl = urlParams.get("room") || urlParams.get("join");
+
+  if (!roomFromUrl && window.location.hash) {
+    roomFromUrl = window.location.hash.replace("#", "").trim();
+  }
+
+  if (roomFromUrl) {
+    const cleanRoom = roomFromUrl.trim().toUpperCase().slice(0, 20);
+    roomInput.value = cleanRoom;
+    invitedRoomCode.textContent = cleanRoom;
+    inviteBanner.classList.remove("hidden");
+
+    // Automatically assign a friendly random username for seamless entry
+    const autoUsername = generateRandomUsername();
+    usernameInput.value = autoUsername;
+
+    // Direct seamless join without delay
+    setTimeout(() => {
+      joinChat();
+      showToast(`Joined Room ${cleanRoom} as ${autoUsername}!`, "success");
+    }, 400);
+  } else {
+    // Generate a default random username on join screen
+    usernameInput.value = generateRandomUsername();
+  }
+});
+
+
+/* =========================================
    JOIN CHAT
-========================= */
+========================================= */
 
 joinButton.addEventListener("click", joinChat);
-
 
 usernameInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
@@ -102,2197 +223,1385 @@ usernameInput.addEventListener("keydown", (event) => {
   }
 });
 
-
 roomInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     joinChat();
   }
 });
 
-
 function joinChat() {
-
   const username = usernameInput.value.trim();
-
-  const room = roomInput.value
-    .trim()
-    .toUpperCase();
-
+  const room = roomInput.value.trim().toUpperCase();
 
   if (!username || !room) {
-
-    alert(
-      "Please enter both a username and room code."
-    );
-
+    showToast("Please enter both a username and room code.");
     return;
   }
 
-
   currentUsername = username.slice(0, 20);
   currentRoom = room.slice(0, 20);
-
 
   socket.emit("join-room", {
     username: currentUsername,
     room: currentRoom,
   });
 
-
-  roomName.textContent = `Room ${currentRoom}`;
-
+  roomName.textContent = `#${currentRoom}`;
+  roomName.setAttribute("title", `Room ${currentRoom} • Click to share`);
 
   joinScreen.classList.add("hidden");
-
   chatScreen.classList.remove("hidden");
 
-
   joinedChat = true;
-
-
   startPresenceHeartbeat();
-
   sendPresence("active");
-
 
   setTimeout(() => {
     messageInput.focus();
-  }, 100);
+  }, 150);
 }
 
 
-/* =========================
-   SEND MESSAGE
-========================= */
+/* =========================================
+   SEND TEXT MESSAGE
+========================================= */
 
-messageForm.addEventListener(
-  "submit",
-  (event) => {
+messageForm.addEventListener("submit", (event) => {
+  event.preventDefault();
 
-    event.preventDefault();
+  const message = messageInput.value.trim();
+  if (!message) return;
 
+  socket.emit("send-message", message.slice(0, 1500));
+  messageInput.value = "";
+  messageInput.focus();
+});
 
-    const message =
-      messageInput.value.trim();
+socket.on("chat-message", (data) => {
+  appendChatMessage(data);
+});
 
+function appendChatMessage(data) {
+  const isOwnMessage = data.username === currentUsername;
+  const messageElement = document.createElement("div");
+  messageElement.className = `message ${isOwnMessage ? "own-message" : "other-message"}`;
 
-    if (!message) return;
+  const bubble = document.createElement("div");
+  bubble.className = "message-bubble";
 
+  const name = document.createElement("strong");
+  name.textContent = isOwnMessage ? "You" : data.username;
 
-    socket.emit(
-      "send-message",
-      message.slice(0, 1000)
-    );
+  const text = document.createElement("span");
+  text.textContent = data.message;
 
+  const time = document.createElement("small");
+  time.textContent = data.time;
 
-    messageInput.value = "";
+  bubble.appendChild(name);
+  bubble.appendChild(text);
+  bubble.appendChild(time);
 
-
-    messageInput.focus();
-  }
-);
-
-
-/* =========================
-   CHAT MESSAGE
-========================= */
-
-socket.on(
-  "chat-message",
-  (data) => {
-
-    const messageElement =
-      document.createElement("div");
-
-
-    const isOwnMessage =
-      data.username === currentUsername;
-
-
-    messageElement.className =
-      `message ${isOwnMessage ? "own-message" : "other-message"}`;
-
-
-    const bubble = document.createElement("div");
-
-    bubble.className = "message-bubble";
-
-
-    const name = document.createElement("strong");
-
-    name.textContent =
-      isOwnMessage ? "You" : data.username;
-
-
-    const text = document.createElement("span");
-
-    text.textContent = data.message;
-
-
-    const time = document.createElement("small");
-
-    time.textContent = data.time;
-
-
-    bubble.appendChild(name);
-    bubble.appendChild(text);
-    bubble.appendChild(time);
-
-
-    messageElement.appendChild(bubble);
-
-    messages.appendChild(messageElement);
-
-
-    scrollMessagesToBottom();
-  }
-);
-
-
-/* =========================
-   LOCAL SYSTEM MESSAGE
-========================= */
-
-/*
-  Shows a small centered system-style message
-  only on this device (not sent to the room).
-*/
-
-function localSystemMessage(text) {
-
-  const messageElement =
-    document.createElement("div");
-
-
-  messageElement.className =
-    "system-message";
-
-
-  messageElement.textContent =
-    text;
-
-
-  messages.appendChild(
-    messageElement
-  );
-
+  messageElement.appendChild(bubble);
+  messages.appendChild(messageElement);
 
   scrollMessagesToBottom();
 }
 
 
-/* =========================
-   VOICE NOTES
-========================= */
+/* =========================================
+   SINGLE-TIME / VIEW-ONCE PHOTO FEATURE
+========================================= */
+
+// Trigger file input
+photoButton.addEventListener("click", () => {
+  photoFileInput.click();
+});
+
+// Photo selected from file picker
+photoFileInput.addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    showToast("Please select a valid image file.");
+    return;
+  }
+
+  processAndPreviewPhoto(file);
+});
+
+// Support paste (Ctrl+V) from clipboard
+document.addEventListener("paste", (e) => {
+  if (!joinedChat) return;
+  const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+  for (const item of items) {
+    if (item.type.indexOf("image") === 0) {
+      const file = item.getAsFile();
+      if (file) {
+        processAndPreviewPhoto(file);
+        break;
+      }
+    }
+  }
+});
+
+// Compress photo on canvas to keep bandwidth fast & lightweight
+function processAndPreviewPhoto(file) {
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const img = new Image();
+    img.onload = () => {
+      const maxDim = 1600;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+
+      pendingPhotoDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+
+      // Show preview bar
+      previewImg.src = pendingPhotoDataUrl;
+      photoPreviewBar.classList.remove("hidden");
+      photoCaptionInput.focus();
+    };
+    img.src = event.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Toggle View-Once ON / OFF
+viewOnceToggle.addEventListener("click", () => {
+  isViewOnceMode = !isViewOnceMode;
+  viewOnceToggle.classList.toggle("active", isViewOnceMode);
+  viewOnceToggle.querySelector(".view-once-text").innerHTML =
+    `View Once: <strong>${isViewOnceMode ? "ON" : "OFF"}</strong>`;
+});
+
+// Remove / Cancel photo preview
+removePhotoBtn.addEventListener("click", clearPhotoPreview);
+
+function clearPhotoPreview() {
+  pendingPhotoDataUrl = null;
+  previewImg.src = "";
+  photoCaptionInput.value = "";
+  photoPreviewBar.classList.add("hidden");
+  photoFileInput.value = "";
+}
+
+// Send photo
+sendPhotoBtn.addEventListener("click", () => {
+  if (!pendingPhotoDataUrl) return;
+
+  const caption = photoCaptionInput.value.trim();
+  const photoId = "photo_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+
+  socket.emit("single-photo", {
+    id: photoId,
+    image: pendingPhotoDataUrl,
+    caption,
+    isViewOnce: isViewOnceMode,
+  });
+
+  clearPhotoPreview();
+});
+
+// Incoming photo received
+socket.on("single-photo", (data) => {
+  if (!data || !data.image) return;
+
+  // Store in ephemeral memory
+  ephemeralPhotoStore.set(data.id, data);
+
+  appendPhotoMessage(data);
+});
+
+// Photo opened notification
+socket.on("photo-opened", ({ photoId, openedBy, time }) => {
+  const bubble = document.querySelector(`[data-photo-id="${photoId}"]`);
+  if (bubble) {
+    bubble.classList.add("opened");
+    const hint = bubble.querySelector(".view-once-hint");
+    if (hint) {
+      hint.textContent = `Opened by ${openedBy} at ${time}`;
+    }
+  }
+});
+
+function appendPhotoMessage(data) {
+  const isOwnMessage = data.username === currentUsername;
+  const messageElement = document.createElement("div");
+  messageElement.className = `message ${isOwnMessage ? "own-message" : "other-message"}`;
+
+  const bubble = document.createElement("div");
+  bubble.dataset.photoId = data.id;
+
+  const name = document.createElement("strong");
+  name.textContent = isOwnMessage ? "You" : data.username;
+
+  if (data.isViewOnce) {
+    // Single-Time View-Once Card
+    bubble.className = "message-bubble view-once-bubble";
+
+    const card = document.createElement("div");
+    card.className = "view-once-card";
+
+    const iconWrap = document.createElement("div");
+    iconWrap.className = "view-once-icon-wrap";
+    iconWrap.textContent = "①";
+
+    const details = document.createElement("div");
+    details.className = "view-once-details";
+
+    const title = document.createElement("span");
+    title.className = "view-once-title";
+    title.textContent = "View Once Photo";
+
+    const hint = document.createElement("span");
+    hint.className = "view-once-hint";
+    hint.textContent = isOwnMessage ? "Sent • View once" : "Tap to view • Self-destructs";
+
+    details.appendChild(title);
+    details.appendChild(hint);
+
+    if (data.caption) {
+      const captionEl = document.createElement("span");
+      captionEl.className = "view-once-caption-text";
+      captionEl.textContent = data.caption;
+      details.appendChild(captionEl);
+    }
+
+    card.appendChild(iconWrap);
+    card.appendChild(details);
+
+    const time = document.createElement("small");
+    time.textContent = data.time;
+
+    bubble.appendChild(name);
+    bubble.appendChild(card);
+    bubble.appendChild(time);
+
+    // Clicking View-Once Photo
+    bubble.addEventListener("click", () => {
+      if (bubble.classList.contains("opened")) {
+        showToast("This view-once photo has already expired.");
+        return;
+      }
+      openViewOnceModal(data.id);
+    });
+
+  } else {
+    // Regular ephemeral photo
+    bubble.className = "message-bubble";
+
+    const img = document.createElement("img");
+    img.src = data.image;
+    img.alt = "Chat photo";
+    img.className = "chat-photo-img";
+
+    img.addEventListener("click", () => {
+      openLightbox(data.image, data.caption);
+    });
+
+    bubble.appendChild(name);
+    bubble.appendChild(img);
+
+    if (data.caption) {
+      const caption = document.createElement("span");
+      caption.textContent = data.caption;
+      bubble.appendChild(caption);
+    }
+
+    const time = document.createElement("small");
+    time.textContent = data.time;
+    bubble.appendChild(time);
+  }
+
+  messageElement.appendChild(bubble);
+  messages.appendChild(messageElement);
+  scrollMessagesToBottom();
+}
+
+function openViewOnceModal(photoId) {
+  const photo = ephemeralPhotoStore.get(photoId);
+  if (!photo) {
+    showToast("Photo is no longer available.");
+    return;
+  }
+
+  activeViewOnceId = photoId;
+  viewOnceImage.src = photo.image;
+
+  if (photo.caption) {
+    viewOnceCaption.textContent = photo.caption;
+    viewOnceCaption.classList.remove("hidden");
+  } else {
+    viewOnceCaption.classList.add("hidden");
+  }
+
+  viewOnceModal.classList.remove("hidden");
+
+  // Start 15s self-destruct countdown
+  let timeLeft = 15;
+  viewOnceTimer.textContent = `${timeLeft}s`;
+
+  clearInterval(viewOnceCountdownInterval);
+  viewOnceCountdownInterval = setInterval(() => {
+    timeLeft--;
+    viewOnceTimer.textContent = `${timeLeft}s`;
+    if (timeLeft <= 0) {
+      closeAndViewOnceDestroy();
+    }
+  }, 1000);
+}
+
+closeViewOnceBtn.addEventListener("click", closeAndViewOnceDestroy);
+
+function closeAndViewOnceDestroy() {
+  clearInterval(viewOnceCountdownInterval);
+  viewOnceModal.classList.add("hidden");
+
+  if (activeViewOnceId) {
+    const photoId = activeViewOnceId;
+    activeViewOnceId = null;
+
+    // Securely wipe image data from memory
+    viewOnceImage.src = "";
+    ephemeralPhotoStore.delete(photoId);
+
+    // Mark bubble as expired
+    const bubble = document.querySelector(`[data-photo-id="${photoId}"]`);
+    if (bubble) {
+      bubble.classList.add("opened");
+      const hint = bubble.querySelector(".view-once-hint");
+      if (hint) {
+        hint.textContent = "Expired • Photo deleted";
+      }
+    }
+
+    // Notify others
+    socket.emit("photo-opened", { photoId });
+    showToast("Photo self-destructed & purged from memory.");
+  }
+}
+
+function openLightbox(imageUrl, caption) {
+  viewOnceImage.src = imageUrl;
+  viewOnceTimer.textContent = "Temporary";
+  if (caption) {
+    viewOnceCaption.textContent = caption;
+    viewOnceCaption.classList.remove("hidden");
+  } else {
+    viewOnceCaption.classList.add("hidden");
+  }
+  viewOnceModal.classList.remove("hidden");
+}
+
+
+/* =========================================
+   ROOM SHARE FEATURE (Direct link + QR + Copy)
+========================================= */
+
+function getRoomShareUrl() {
+  const origin = window.location.origin;
+  const path = window.location.pathname;
+  return `${origin}${path}?room=${encodeURIComponent(currentRoom)}`;
+}
+
+function openShareModal() {
+  if (!joinedChat) return;
+
+  const shareUrl = getRoomShareUrl();
+  shareRoomCodeDisplay.textContent = currentRoom;
+  shareLinkInput.value = shareUrl;
+  shareModal.classList.remove("hidden");
+}
+
+shareButton.addEventListener("click", () => {
+  // If native share is supported on mobile, offer direct share sheet
+  if (navigator.share) {
+    navigator.share({
+      title: "Join my TempChat Room",
+      text: `Join my private ephemeral room ${currentRoom} on TempChat!`,
+      url: getRoomShareUrl(),
+    }).catch(() => {
+      openShareModal();
+    });
+  } else {
+    openShareModal();
+  }
+});
+
+roomName.addEventListener("click", openShareModal);
+panelShareBtn.addEventListener("click", openShareModal);
+
+closeShareModal.addEventListener("click", () => {
+  shareModal.classList.add("hidden");
+});
+
+copyShareLinkBtn.addEventListener("click", () => {
+  const shareUrl = getRoomShareUrl();
+  navigator.clipboard.writeText(shareUrl).then(() => {
+    copyShareLinkBtn.textContent = "Copied! ✓";
+    showToast("Room invite link copied to clipboard!", "success");
+    setTimeout(() => {
+      copyShareLinkBtn.textContent = "Copy Link";
+    }, 2000);
+  }).catch(() => {
+    shareLinkInput.select();
+    document.execCommand("copy");
+    showToast("Room link copied!");
+  });
+});
+
+shareWhatsappBtn.addEventListener("click", () => {
+  const text = `Join my ephemeral room ${currentRoom} on TempChat: ${getRoomShareUrl()}`;
+  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
+});
+
+shareTelegramBtn.addEventListener("click", () => {
+  const text = `Join my ephemeral room ${currentRoom} on TempChat!`;
+  window.open(`https://t.me/share/url?url=${encodeURIComponent(getRoomShareUrl())}&text=${encodeURIComponent(text)}`, "_blank");
+});
+
+shareNativeBtn.addEventListener("click", () => {
+  if (navigator.share) {
+    navigator.share({
+      title: "Join my TempChat Room",
+      text: `Join my private room ${currentRoom} on TempChat!`,
+      url: getRoomShareUrl(),
+    }).catch(() => {});
+  } else {
+    copyShareLinkBtn.click();
+  }
+});
+
+
+/* =========================================
+   VOICE NOTES (Up to 60 seconds)
+========================================= */
 
 const VOICE_PLAY_SVG =
-  '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">' +
-  '<path d="M8 5v14l11-7z"/></svg>';
-
-
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
 const VOICE_PAUSE_SVG =
-  '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">' +
-  '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
-
-
-/*
-  Hide buttons the browser cannot support.
-*/
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
 
 if (!window.MediaRecorder) {
   micButton.classList.add("hidden");
 }
 
-
-if (
-  !navigator.mediaDevices ||
-  !navigator.mediaDevices.getUserMedia
-) {
-  callButton.classList.add("hidden");
-}
-
-
-/*
-  Received voice note from the server.
-  The server relays the audio — nothing is stored.
-*/
-
-socket.on(
-  "voice-message",
-  (data) => {
-
-    if (!data || !data.audio) return;
-
-    try {
-
-      appendVoiceMessage(data);
-
-    } catch (error) {
-
-      console.warn("Could not render voice note:", error);
-
-    }
-
-  }
-);
-
-
-/*
-  Builds a voice note bubble with a small
-  play/pause player, matching the chat style.
-*/
+socket.on("voice-message", (data) => {
+  if (!data || !data.audio) return;
+  appendVoiceMessage(data);
+});
 
 function appendVoiceMessage(data) {
+  const isOwnMessage = data.username === currentUsername;
+  const messageElement = document.createElement("div");
+  messageElement.className = `message ${isOwnMessage ? "own-message" : "other-message"}`;
 
-  const isOwnMessage =
-    data.username === currentUsername;
+  const bubble = document.createElement("div");
+  bubble.className = "message-bubble voice-bubble";
 
+  const name = document.createElement("strong");
+  name.textContent = isOwnMessage ? "You" : data.username;
 
-  const messageElement =
-    document.createElement("div");
+  const player = buildVoicePlayer(data);
 
-
-  messageElement.className =
-    `message ${isOwnMessage ? "own-message" : "other-message"}`;
-
-
-  const bubble =
-    document.createElement("div");
-
-
-  bubble.className =
-    "message-bubble voice-bubble";
-
-
-  const name =
-    document.createElement("strong");
-
-
-  name.textContent =
-    isOwnMessage ? "You" : data.username;
-
-
-  const player =
-    buildVoicePlayer(data);
-
-
-  const time =
-    document.createElement("small");
-
-
-  time.textContent =
-    data.time;
-
+  const time = document.createElement("small");
+  time.textContent = data.time;
 
   bubble.appendChild(name);
   bubble.appendChild(player);
   bubble.appendChild(time);
 
-
   messageElement.appendChild(bubble);
-
   messages.appendChild(messageElement);
-
-
   scrollMessagesToBottom();
 }
 
-
 function buildVoicePlayer(data) {
+  const mime = typeof data.mime === "string" ? data.mime : "audio/webm";
+  const blob = new Blob([data.audio], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
 
-  const mime =
-    typeof data.mime === "string"
-      ? data.mime
-      : "audio/webm";
+  const player = document.createElement("div");
+  player.className = "voice-player";
 
+  const playButton = document.createElement("button");
+  playButton.type = "button";
+  playButton.className = "voice-play";
+  playButton.setAttribute("aria-label", "Play voice note");
+  playButton.innerHTML = VOICE_PLAY_SVG;
 
-  const blob =
-    new Blob([data.audio], { type: mime });
+  const bar = document.createElement("div");
+  bar.className = "voice-bar";
 
-
-  const url =
-    URL.createObjectURL(blob);
-
-
-  const audio =
-    new Audio(url);
-
-
-  const player =
-    document.createElement("div");
-
-
-  player.className =
-    "voice-player";
-
-
-  const playButton =
-    document.createElement("button");
-
-
-  playButton.type =
-    "button";
-
-
-  playButton.className =
-    "voice-play";
-
-
-  playButton.setAttribute(
-    "aria-label",
-    "Play voice note"
-  );
-
-
-  playButton.innerHTML =
-    VOICE_PLAY_SVG;
-
-
-  const bar =
-    document.createElement("div");
-
-
-  bar.className =
-    "voice-bar";
-
-
-  const progress =
-    document.createElement("div");
-
-
-  progress.className =
-    "voice-progress";
-
-
+  const progress = document.createElement("div");
+  progress.className = "voice-progress";
   bar.appendChild(progress);
 
-
-  const duration =
-    document.createElement("span");
-
-
-  duration.className =
-    "voice-duration";
-
-
-  duration.textContent =
-    "0:00";
-
+  const duration = document.createElement("span");
+  duration.className = "voice-duration";
+  duration.textContent = "0:00";
 
   player.appendChild(playButton);
   player.appendChild(bar);
   player.appendChild(duration);
 
+  audio.addEventListener("loadedmetadata", () => {
+    duration.textContent = formatDuration(audio.duration);
+  });
 
-  audio.addEventListener(
-    "loadedmetadata",
-    () => {
-
-      duration.textContent =
-        formatDuration(audio.duration);
-
+  audio.addEventListener("timeupdate", () => {
+    if (audio.duration) {
+      progress.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
     }
-  );
+  });
 
+  audio.addEventListener("ended", () => {
+    playButton.innerHTML = VOICE_PLAY_SVG;
+    progress.style.width = "0%";
+    duration.textContent = formatDuration(audio.duration);
+  });
 
-  audio.addEventListener(
-    "timeupdate",
-    () => {
-
-      if (audio.duration) {
-
-        progress.style.width =
-          `${(audio.currentTime / audio.duration) * 100}%`;
-
+  playButton.addEventListener("click", () => {
+    if (audio.paused) {
+      if (currentVoiceAudio && currentVoiceAudio !== audio) {
+        currentVoiceAudio.pause();
+        if (currentVoicePlayButton) currentVoicePlayButton.innerHTML = VOICE_PLAY_SVG;
       }
-
+      audio.play();
+      playButton.innerHTML = VOICE_PAUSE_SVG;
+      currentVoiceAudio = audio;
+      currentVoicePlayButton = playButton;
+    } else {
+      audio.pause();
+      playButton.innerHTML = VOICE_PLAY_SVG;
     }
-  );
+  });
 
-
-  audio.addEventListener(
-    "ended",
-    () => {
-
-      playButton.innerHTML =
-        VOICE_PLAY_SVG;
-
-      progress.style.width =
-        "0%";
-
-      duration.textContent =
-        formatDuration(audio.duration);
-
-    }
-  );
-
-
-  playButton.addEventListener(
-    "click",
-    () => {
-
-      if (audio.paused) {
-
-        if (
-          currentVoiceAudio &&
-          currentVoiceAudio !== audio
-        ) {
-
-          currentVoiceAudio.pause();
-
-          if (currentVoicePlayButton) {
-
-            currentVoicePlayButton.innerHTML =
-              VOICE_PLAY_SVG;
-
-          }
-
-        }
-
-        audio.play();
-
-        playButton.innerHTML =
-          VOICE_PAUSE_SVG;
-
-        currentVoiceAudio = audio;
-        currentVoicePlayButton = playButton;
-
-      } else {
-
-        audio.pause();
-
-        playButton.innerHTML =
-          VOICE_PLAY_SVG;
-
-      }
-
-    }
-  );
-
-
-  bar.addEventListener(
-    "click",
-    (event) => {
-
-      if (!audio.duration) return;
-
-      const rect =
-        bar.getBoundingClientRect();
-
-      const ratio =
-        Math.min(
-          Math.max(
-            (event.clientX - rect.left) / rect.width,
-            0
-          ),
-          1
-        );
-
-      audio.currentTime =
-        ratio * audio.duration;
-
-    }
-  );
-
+  bar.addEventListener("click", (event) => {
+    if (!audio.duration) return;
+    const rect = bar.getBoundingClientRect();
+    const ratio = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1);
+    audio.currentTime = ratio * audio.duration;
+  });
 
   return player;
 }
 
-
-/*
-  Chooses the best audio format the browser can record.
-*/
-
 function pickMimeType() {
-
   const options = [
     "audio/webm;codecs=opus",
     "audio/webm",
     "audio/mp4",
-    "audio/ogg;codecs=opus"
+    "audio/ogg;codecs=opus",
   ];
-
-
   for (const type of options) {
-
-    if (MediaRecorder.isTypeSupported(type)) {
-
-      return type;
-
-    }
-
+    if (MediaRecorder.isTypeSupported(type)) return type;
   }
-
-
   return "";
 }
 
-
-/*
-  Starts recording a voice note (max 30 seconds).
-*/
-
 async function startVoiceRecording() {
-
   if (mediaRecorder) return;
-
-  if (
-    !navigator.mediaDevices ||
-    !window.MediaRecorder
-  ) {
-
-    localSystemMessage(
-      "Voice notes are not supported in this browser."
-    );
-
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    showToast("Voice notes are not supported in this browser.");
     return;
-
   }
-
 
   let stream;
-
-
   try {
-
-    stream =
-      await navigator.mediaDevices.getUserMedia({
-        audio: true
-      });
-
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (error) {
-
-    localSystemMessage(
-      "Microphone access was denied. Allow the mic to record a voice note."
-    );
-
+    showToast("Microphone access was denied.");
     return;
-
   }
-
 
   recordedChunks = [];
   recordSendOnStop = false;
-
-
-  let mimeType = "";
+  let mimeType = pickMimeType();
 
   try {
-
-    mimeType = pickMimeType();
-
-    mediaRecorder =
-      new MediaRecorder(
-        stream,
-        mimeType ? { mimeType } : undefined
-      );
-
+    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
   } catch (error) {
-
-    stream.getTracks().forEach(
-      (track) => track.stop()
-    );
-
+    stream.getTracks().forEach((t) => t.stop());
     mediaRecorder = null;
-
-    localSystemMessage(
-      "Could not start recording on this browser."
-    );
-
+    showToast("Could not start recording.");
     return;
-
   }
 
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+  };
 
-  mediaRecorder.ondataavailable =
-    (event) => {
+  mediaRecorder.onstop = () => {
+    const usedMime = mediaRecorder.mimeType || mimeType || "audio/webm";
+    mediaRecorder = null;
+    clearInterval(recordTimerInterval);
+    recordTimerInterval = null;
+    stream.getTracks().forEach((t) => t.stop());
+    setIsRecording(false);
 
-      if (event.data && event.data.size > 0) {
-
-        recordedChunks.push(event.data);
-
-      }
-
-    };
-
-
-  mediaRecorder.onstop =
-    () => {
-
-      const usedMime =
-        mediaRecorder.mimeType || mimeType || "audio/webm";
-
-
-      mediaRecorder = null;
-
-      clearInterval(recordTimerInterval);
-
-      recordTimerInterval = null;
-
-      stream.getTracks().forEach(
-        (track) => track.stop()
-      );
-
-      setIsRecording(false);
-
-
-      if (
-        recordSendOnStop &&
-        recordedChunks.length
-      ) {
-
-        const blob =
-          new Blob(recordedChunks, {
-            type: usedMime
-          });
-
-
-        socket.emit(
-          "voice-message",
-          {
-            audio: blob,
-            mime: usedMime
-          }
-        );
-
-      }
-
-
-      recordedChunks = [];
-
-    };
-
+    if (recordSendOnStop && recordedChunks.length) {
+      const blob = new Blob(recordedChunks, { type: usedMime });
+      socket.emit("voice-message", {
+        audio: blob,
+        mime: usedMime,
+      });
+    }
+    recordedChunks = [];
+  };
 
   mediaRecorder.start();
-
   recordStartedAt = Date.now();
-
   setIsRecording(true);
-
   messageInput.blur();
 
-
-  recordTimerInterval =
-    setInterval(
-      () => {
-
-        const seconds =
-          Math.floor(
-            (Date.now() - recordStartedAt) / 1000
-          );
-
-
-        recordTimer.textContent =
-          formatDuration(seconds);
-
-
-        if (seconds >= 30) {
-
-          stopVoiceRecording(true);
-
-        }
-
-      },
-      250
-    );
-
+  recordTimerInterval = setInterval(() => {
+    const seconds = Math.floor((Date.now() - recordStartedAt) / 1000);
+    recordTimer.textContent = `${formatDuration(seconds)} / 1:00`;
+    if (seconds >= 60) {
+      stopVoiceRecording(true);
+    }
+  }, 250);
 }
-
 
 function stopVoiceRecording(send) {
-
   if (!mediaRecorder) return;
-
-  recordSendOnStop =
-    Boolean(send);
-
+  recordSendOnStop = Boolean(send);
   try {
-
     mediaRecorder.stop();
-
-  } catch (error) {
-
-    /* Already stopped — nothing to do. */
-
-  }
-
+  } catch (e) {}
 }
-
 
 function setIsRecording(recording) {
-
-  messageForm.classList.toggle(
-    "recording",
-    recording
-  );
-
-
-  recordBar.classList.toggle(
-    "hidden",
-    !recording
-  );
-
+  messageForm.classList.toggle("recording", recording);
+  recordBar.classList.toggle("hidden", !recording);
 }
 
-
-function formatDuration(totalSeconds) {
-
-  const safe =
-    Math.max(0, Math.floor(totalSeconds));
+micButton.addEventListener("click", startVoiceRecording);
+sendRecord.addEventListener("click", () => stopVoiceRecording(true));
+cancelRecord.addEventListener("click", () => stopVoiceRecording(false));
 
 
-  const minutes =
-    Math.floor(safe / 60);
+/* =========================================
+   VIDEO & VOICE CALL (WebRTC + Mesh)
+========================================= */
 
+voiceCallButton.addEventListener("click", () => {
+  if (inCall) return;
+  startCall("audio");
+});
 
-  const seconds =
-    safe % 60;
+videoCallButton.addEventListener("click", () => {
+  if (inCall) return;
+  startCall("video");
+});
 
-
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-
-}
-
-
-micButton.addEventListener(
-  "click",
-  () => {
-
-    startVoiceRecording();
-
-  }
-);
-
-
-sendRecord.addEventListener(
-  "click",
-  () => {
-
-    stopVoiceRecording(true);
-
-  }
-);
-
-
-cancelRecord.addEventListener(
-  "click",
-  () => {
-
-    stopVoiceRecording(false);
-
-  }
-);
-
-
-/* =========================
-   TEMP CALL
-   (audio relayed through the server — no WebRTC/TURN)
-========================= */
-
-callButton.addEventListener(
-  "click",
-  () => {
-
-    if (inCall) return;
-
-    startCallAsCaller();
-
-  }
-);
-
-
-async function startCallAsCaller() {
-
-  const stream =
-    await requestCallMic();
-
-
-  if (!stream) return;
-
-
-  enterCallUI();
-
-  socket.emit("call-start");
-
-}
-
-
-async function acceptIncomingCall() {
-
-  hideIncomingCall();
-
-  const stream =
-    await requestCallMic();
-
-
-  if (!stream) return;
-
-
-  enterCallUI();
-
-  socket.emit("call-join");
-
-}
-
-
-function declineIncomingCall() {
-
-  hideIncomingCall();
-
-}
-
-
-async function requestCallMic() {
-
-  if (
-    !navigator.mediaDevices ||
-    !navigator.mediaDevices.getUserMedia
-  ) {
-
-    localSystemMessage(
-      "Audio calls are not supported in this browser."
-    );
-
-    return null;
-
-  }
-
+async function startCall(callType) {
+  currentCallType = callType;
+  const isVideo = callType === "video";
 
   try {
-
-    const stream =
-      await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-
-
-    localStream =
-      stream;
-
-
-    return stream;
-
-  } catch (error) {
-
-    localStream =
-      null;
-
-    localSystemMessage(
-      "Microphone access was denied. Allow the mic to join the call."
-    );
-
-    return null;
-
+    localStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: isVideo ? { facingMode: currentFacingMode } : false,
+    });
+  } catch (err) {
+    if (isVideo) {
+      // Fallback to audio if camera failed
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        currentCallType = "audio";
+        showToast("Camera unavailable, starting as voice call.");
+      } catch (audioErr) {
+        showToast("Microphone & camera access denied.");
+        return;
+      }
+    } else {
+      showToast("Microphone access denied.");
+      return;
+    }
   }
 
+  isMicMuted = false;
+  isCameraOff = currentCallType === "audio";
+  enterCallUI();
+
+  socket.emit("call-start", { callType: currentCallType });
 }
 
+// Incoming Call Notification
+socket.on("call-start", ({ by, id, callType }) => {
+  if (inCall) return;
+  incomingCallData = { by, id, callType };
 
-/*
-  Sets up mic capture + playback.
-  Mic: raw PCM chunks are sent to the server, which relays them
-  to the other people in the call. Playback: incoming chunks are
-  scheduled in sequence with a small pre-roll (jitter buffer).
-*/
+  incomingName.textContent = by;
+  incomingRoom.textContent = currentRoom;
+  incomingCallTypeText.textContent = callType === "video" ? "is video calling…" : "is voice calling…";
+  incomingCallBadge.textContent = callType === "video" ? "VIDEO CALL" : "VOICE CALL";
 
-function startAudioGraph() {
+  incomingCall.classList.remove("hidden");
 
-  if (!localStream) return;
+  if (navigator.vibrate) {
+    navigator.vibrate([200, 100, 200, 100, 300]);
+  }
+});
 
+// Callee Accepts Call
+acceptCall.addEventListener("click", async () => {
+  if (!incomingCallData) return;
+  incomingCall.classList.add("hidden");
+
+  const callType = incomingCallData.callType || "video";
+  currentCallType = callType;
+  const isVideo = callType === "video";
 
   try {
-
-    audioCtx =
-      new AudioContext();
-
-  } catch (error) {
-
-    audioCtx =
-      null;
-
-    return;
-
+    localStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: isVideo ? { facingMode: currentFacingMode } : false,
+    });
+  } catch (err) {
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      currentCallType = "audio";
+      showToast("Joining as voice call.");
+    } catch (e) {
+      showToast("Permission denied to join call.");
+      return;
+    }
   }
 
+  isMicMuted = false;
+  isCameraOff = currentCallType === "audio";
+  enterCallUI();
 
-  micSource =
-    audioCtx.createMediaStreamSource(localStream);
+  socket.emit("call-join", {
+    callType: currentCallType,
+    videoEnabled: !isCameraOff,
+    audioEnabled: true,
+  });
+});
 
+declineCall.addEventListener("click", () => {
+  incomingCall.classList.add("hidden");
+  incomingCallData = null;
+});
 
-  scriptNode =
-    audioCtx.createScriptProcessor(2048, 1, 1);
-
-
-  scriptNode.onaudioprocess =
-    (event) => {
-
-      const input =
-        event.inputBuffer.getChannelData(0);
-
-
-      if (!inCall || mutedFlag) return;
-
-
-      // Float32 -> Int16 PCM
-      const pcm =
-        new Int16Array(input.length);
-
-
-      for (let i = 0; i < input.length; i++) {
-
-        const s =
-          Math.max(-1, Math.min(1, input[i]));
-
-
-        pcm[i] =
-          s < 0
-            ? s * 32768
-            : s * 32767;
-
-      }
-
-
-      if (!micSentFirst) {
-
-        micSentFirst =
-          true;
-
-        markSelfConnected();
-
-      }
-
-
-      socket.emit(
-        "audio-chunk",
-        pcm.buffer
-      );
-
-    };
-
-
-  micSource.connect(scriptNode);
-  scriptNode.connect(audioCtx.destination);
-
-
-  if (audioCtx.state === "suspended") {
-
-    audioCtx.resume().catch(
-      () => { /* resumed on tap */ }
-    );
-
-  }
-
-}
-
-
-function stopAudioGraph() {
-
-  if (scriptNode) {
-
-    try { scriptNode.disconnect(); }
-    catch (error) { /* noop */ }
-
-    scriptNode = null;
-
-  }
-
-
-  if (micSource) {
-
-    try { micSource.disconnect(); }
-    catch (error) { /* noop */ }
-
-    micSource = null;
-
-  }
-
-
-  if (audioCtx) {
-
-    audioCtx.close().catch(
-      () => { /* already closed */ }
-    );
-
-    audioCtx =
-      null;
-
-  }
-
-}
-
-
+// Setup Call Screen UI
 function enterCallUI() {
-
   inCall = true;
-
-  mutedFlag = false;
-
-  micSentFirst = false;
-
   callStartedAt = Date.now();
-
   callTimer.textContent = "0:00";
+  videoGrid.innerHTML = "";
 
-  callPeople.innerHTML = "";
+  callTypeIndicator.textContent = currentCallType === "video" ? "📹 VIDEO CALL" : "📞 VOICE CALL";
+  callRoomLabel.textContent = `Room ${currentRoom}`;
 
-  addCallRow(
-    "me",
-    `${currentUsername} (You)`,
-    true,
-    "Connecting…"
-  );
+  muteButton.classList.toggle("off", isMicMuted);
+  cameraButton.classList.toggle("off", isCameraOff);
+
+  // Render Self Tile
+  createVideoTile("me", `${currentUsername} (You)`, localStream, true, !isCameraOff, !isMicMuted);
 
   callScreen.classList.remove("hidden");
-
   incomingCall.classList.add("hidden");
 
-  callRoomLabel.textContent =
-    `Room ${currentRoom}`;
+  updateVideoGridLayout();
 
-
-  startAudioGraph();
-
-
-  callTimerInterval =
-    setInterval(
-      () => {
-
-        const seconds =
-          Math.floor(
-            (Date.now() - callStartedAt) / 1000
-          );
-
-
-        callTimer.textContent =
-          formatDuration(seconds);
-
-      },
-      1000
-    );
-
+  clearInterval(callTimerInterval);
+  callTimerInterval = setInterval(() => {
+    const seconds = Math.floor((Date.now() - callStartedAt) / 1000);
+    callTimer.textContent = formatDuration(seconds);
+  }, 1000);
 }
-
 
 function exitCallUI() {
+  clearInterval(callTimerInterval);
+  callTimerInterval = null;
 
-  if (callTimerInterval) {
-
-    clearInterval(callTimerInterval);
-
-    callTimerInterval = null;
-
-  }
-
-
-  stopAudioGraph();
-
-
-  callPeers.clear();
-
-  callPeople.innerHTML = "";
-
-  callScreen.classList.add("hidden");
-
-  incomingCall.classList.add("hidden");
-
-  inCall = false;
-
-  mutedFlag = false;
-
-  micSentFirst = false;
-
-
+  // Stop local stream tracks
   if (localStream) {
-
-    localStream.getTracks().forEach(
-      (track) => track.stop()
-    );
-
+    localStream.getTracks().forEach((t) => t.stop());
     localStream = null;
-
   }
 
-
-  muteButton.classList.remove("muted");
-
-}
-
-
-function addCallRow(id, label, isSelf, statusText) {
-
-  removeCallRow(id);
-
-
-  const row =
-    document.createElement("div");
-
-
-  row.className =
-    `call-person ${statusText === "Connected" ? "connected" : "connecting"}`;
-
-
-  row.dataset.peerId =
-    id;
-
-
-  const dot =
-    document.createElement("span");
-
-
-  dot.className =
-    "call-person-dot";
-
-
-  const name =
-    document.createElement("span");
-
-
-  name.className =
-    "call-person-name";
-
-
-  name.textContent =
-    label;
-
-
-  const status =
-    document.createElement("span");
-
-
-  status.className =
-    "call-person-status";
-
-
-  status.textContent =
-    statusText ||
-    (isSelf ? "Active" : "Connecting…");
-
-
-  row.appendChild(dot);
-  row.appendChild(name);
-  row.appendChild(status);
-
-
-  callPeople.appendChild(row);
-
-
-  return row;
-
-}
-
-
-function removeCallRow(id) {
-
-  const existing =
-    callPeople.querySelector(
-      `[data-peer-id="${id}"]`
-    );
-
-
-  if (existing) {
-
-    existing.remove();
-
-  }
-
-}
-
-
-function ensurePeer(id, username) {
-
-  let peer =
-    callPeers.get(id);
-
-
-  if (!peer) {
-
-    const row =
-      addCallRow(
-        id,
-        username || "Guest",
-        false,
-        "Connecting…"
-      );
-
-
-    peer = {
-      username: username || "Guest",
-      row,
-      nextTime: 0
-    };
-
-
-    callPeers.set(id, peer);
-
-  } else if (username && username !== peer.username) {
-
-    peer.username =
-      username;
-
-    const nameEl =
-      peer.row.querySelector(
-        ".call-person-name"
-      );
-
-
-    if (nameEl) {
-
-      nameEl.textContent =
-        username;
-
-    }
-
-  }
-
-
-  return peer;
-
-}
-
-
-function removePeer(id) {
-
-  const peer =
-    callPeers.get(id);
-
-
-  if (!peer) return;
-
-
-  if (peer.row) {
-
-    peer.row.remove();
-
-  }
-
-
-  callPeers.delete(id);
-
-}
-
-
-function setPeerStatus(id, text, connected) {
-
-  const peer =
-    callPeers.get(id);
-
-
-  if (!peer || !peer.row) return;
-
-
-  peer.row.classList.toggle(
-    "connected",
-    Boolean(connected)
-  );
-
-
-  peer.row.classList.toggle(
-    "connecting",
-    !connected
-  );
-
-
-  const status =
-    peer.row.querySelector(
-      ".call-person-status"
-    );
-
-
-  if (status) {
-
-    status.textContent =
-      text;
-
-  }
-
-}
-
-
-function markSelfConnected() {
-
-  const selfRow =
-    callPeople.querySelector(
-      '[data-peer-id="me"]'
-    );
-
-
-  if (!selfRow) return;
-
-
-  selfRow.classList.add("connected");
-
-  selfRow.classList.remove("connecting");
-
-
-  const status =
-    selfRow.querySelector(
-      ".call-person-status"
-    );
-
-
-  if (status) {
-
-    status.textContent =
-      "Connected";
-
-  }
-
-}
-
-
-/* Incoming ring */
-
-socket.on(
-  "call-start",
-  ({ by }) => {
-
-    if (inCall) return;
-
-    if (!by) return;
-
-    incomingName.textContent =
-      by;
-
-    incomingRoom.textContent =
-      currentRoom;
-
-    incomingCall.classList.remove("hidden");
-
-    if (navigator.vibrate) {
-
-      navigator.vibrate([250, 120, 250]);
-
-    }
-
-  }
-);
-
-
-/* Existing participants send me the list of callers */
-
-socket.on(
-  "call-peers",
-  (list) => {
-
-    if (!inCall) return;
-
-
-    (list || []).forEach(
-      (person) => {
-
-        ensurePeer(person.id, person.username);
-
-      }
-    );
-
-  }
-);
-
-
-/* Someone joined the call */
-
-socket.on(
-  "call-peer-joined",
-  ({ id, username }) => {
-
-    if (!inCall) return;
-
-    ensurePeer(id, username);
-
-  }
-);
-
-
-/* Incoming audio chunks from the server relay */
-
-socket.on(
-  "audio-chunk",
-  ({ id, audio }) => {
-
-    if (!inCall) return;
-
-    ensurePeer(id);
-
-    // Audio is flowing — mark the peer connected, even if
-    // playback is momentarily unavailable.
-    setPeerStatus(id, "Connected", true);
-
-    if (!audioCtx) return;
-
-    const peer =
-      callPeers.get(id);
-
-
-    const i16 =
-      new Int16Array(audio);
-
-
-    const samples =
-      new Float32Array(i16.length);
-
-
-    for (let i = 0; i < i16.length; i++) {
-
-      samples[i] =
-        i16[i] / 32768;
-
-    }
-
-
-    const buffer =
-      audioCtx.createBuffer(
-        1,
-        samples.length,
-        audioCtx.sampleRate
-      );
-
-
-    buffer.copyToChannel(samples, 0);
-
-
-    /*
-      Small pre-roll so bursts of chunks play smoothly
-      instead of stuttering.
-    */
-
-    if (
-      !peer.nextTime ||
-      peer.nextTime < audioCtx.currentTime + 0.05
-    ) {
-
-      peer.nextTime =
-        audioCtx.currentTime + 0.18;
-
-    }
-
-
-    const source =
-      audioCtx.createBufferSource();
-
-
-    source.buffer =
-      buffer;
-
-
-    source.connect(audioCtx.destination);
-
-
-    source.start(peer.nextTime);
-
-
-    peer.nextTime +=
-      buffer.duration;
-
-
-    setPeerStatus(id, "Connected", true);
-
-  }
-);
-
-
-/* Someone left the call */
-
-socket.on(
-  "call-peer-left",
-  ({ id }) => {
-
-    removePeer(id);
-
-  }
-);
-
-
-/* The call is over */
-
-socket.on(
-  "call-ended",
-  () => {
-
-    if (!inCall) return;
-
-    localSystemMessage(
-      "Call ended."
-    );
-
-    exitCallUI();
-
-  }
-);
-
-
-/* Accept / Decline buttons */
-
-acceptCall.addEventListener(
-  "click",
-  () => {
-
-    acceptIncomingCall();
-
-  }
-);
-
-
-declineCall.addEventListener(
-  "click",
-  () => {
-
-    declineIncomingCall();
-
-  }
-);
-
-
-function hideIncomingCall() {
-
+  // Close all peer connections
+  peerConnections.forEach(({ pc }) => {
+    if (pc) pc.close();
+  });
+  peerConnections.clear();
+
+  videoGrid.innerHTML = "";
+  callScreen.classList.add("hidden");
   incomingCall.classList.add("hidden");
-
+  inCall = false;
+  incomingCallData = null;
 }
 
+// Create a Video Tile in Grid
+function createVideoTile(id, label, stream, isSelf, videoEnabled, audioEnabled) {
+  removeVideoTile(id);
 
-/* Mute toggle */
+  const tile = document.createElement("div");
+  tile.className = `video-tile ${isSelf ? "self-tile" : ""}`;
+  tile.dataset.peerId = id;
 
-muteButton.addEventListener(
-  "click",
-  () => {
+  const hue = getUsernameHue(label);
+  tile.style.setProperty("--tile-hue", hue);
 
-    if (!localStream) return;
+  const video = document.createElement("video");
+  video.autoplay = true;
+  video.playsInline = true;
+  if (isSelf) video.muted = true;
+  if (stream) video.srcObject = stream;
 
-    mutedFlag =
-      !mutedFlag;
+  // Avatar Placeholder (when camera is off)
+  const avatar = document.createElement("div");
+  avatar.className = `video-tile-avatar ${videoEnabled ? "hidden" : ""}`;
 
+  const circle = document.createElement("div");
+  circle.className = "avatar-circle";
+  circle.textContent = label.slice(0, 2).toUpperCase();
 
-    const track =
-      localStream.getAudioTracks()[0];
+  const hint = document.createElement("span");
+  hint.className = "avatar-status-hint";
+  hint.textContent = isSelf ? "Your camera is off" : "Camera off";
 
+  avatar.appendChild(circle);
+  avatar.appendChild(hint);
 
-    if (track) {
+  // Name Tag
+  const tag = document.createElement("div");
+  tag.className = "video-tile-tag";
 
-      track.enabled =
-        !mutedFlag;
+  const nameSpan = document.createElement("span");
+  nameSpan.textContent = label;
 
-    }
+  const micIcon = document.createElement("span");
+  micIcon.className = `video-tag-icon ${!audioEnabled ? "muted" : ""}`;
+  micIcon.textContent = audioEnabled ? "🎙️" : "🔇";
 
+  tag.appendChild(nameSpan);
+  tag.appendChild(micIcon);
 
-    muteButton.classList.toggle(
-      "muted",
-      mutedFlag
-    );
+  tile.appendChild(video);
+  tile.appendChild(avatar);
+  tile.appendChild(tag);
 
+  videoGrid.appendChild(tile);
+  updateVideoGridLayout();
+
+  return { tile, video, avatar, tag, micIcon };
+}
+
+function removeVideoTile(id) {
+  const existing = videoGrid.querySelector(`[data-peer-id="${id}"]`);
+  if (existing) {
+    existing.remove();
+    updateVideoGridLayout();
   }
-);
+}
 
+function updateVideoGridLayout() {
+  const count = videoGrid.children.length;
+  videoGrid.classList.toggle("single-peer", count === 1);
+  videoGrid.classList.toggle("two-peers", count === 2);
+}
 
-/* Leave the call */
+// WebRTC Signaling Handlers
 
-leaveCall.addEventListener(
-  "click",
-  () => {
+// Existing participants send list of peers to new joiner
+socket.on("call-peers", (peers) => {
+  if (!inCall) return;
+  peers.forEach((peer) => {
+    initiatePeerConnection(peer.id, peer.username, false, peer.videoEnabled, peer.audioEnabled);
+  });
+});
 
-    const wasInCall =
-      inCall;
+// A new peer joined the call
+socket.on("call-peer-joined", ({ id, username, videoEnabled, audioEnabled }) => {
+  if (!inCall) return;
+  initiatePeerConnection(id, username, true, videoEnabled, audioEnabled);
+});
 
+// WebRTC Signal Received (Offer / Answer / ICE)
+socket.on("call-signal", async ({ from, signal }) => {
+  if (!inCall) return;
 
-    socket.emit("call-leave");
+  let peerObj = peerConnections.get(from);
+  if (!peerObj) {
+    peerObj = initiatePeerConnection(from, "Guest", false, true, true);
+  }
 
+  const { pc } = peerObj;
+
+  try {
+    if (signal.type === "offer") {
+      await pc.setRemoteDescription(new RTCSessionDescription(signal));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit("call-signal", { to: from, signal: answer });
+    } else if (signal.type === "answer") {
+      await pc.setRemoteDescription(new RTCSessionDescription(signal));
+    } else if (signal.candidate) {
+      await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+    }
+  } catch (err) {
+    console.warn("WebRTC signal error:", err);
+  }
+});
+
+// Remote peer toggled camera or mic
+socket.on("call-peer-media-state", ({ id, video, audio }) => {
+  const peerObj = peerConnections.get(id);
+  if (!peerObj) return;
+
+  if (typeof video === "boolean") {
+    peerObj.avatar.classList.toggle("hidden", video);
+  }
+  if (typeof audio === "boolean") {
+    peerObj.micIcon.className = `video-tag-icon ${!audio ? "muted" : ""}`;
+    peerObj.micIcon.textContent = audio ? "🎙️" : "🔇";
+  }
+});
+
+// Peer left the call
+socket.on("call-peer-left", ({ id }) => {
+  const peerObj = peerConnections.get(id);
+  if (peerObj) {
+    if (peerObj.pc) peerObj.pc.close();
+    peerConnections.delete(id);
+  }
+  removeVideoTile(id);
+});
+
+// Call ended
+socket.on("call-ended", () => {
+  if (inCall) {
+    localSystemMessage("Call ended.");
     exitCallUI();
+  }
+});
 
+// Helper: Setup WebRTC PeerConnection
+function initiatePeerConnection(peerId, username, isInitiator, videoEnabled, audioEnabled) {
+  if (peerConnections.has(peerId)) {
+    return peerConnections.get(peerId);
+  }
 
-    if (wasInCall) {
+  const pc = new RTCPeerConnection(RTC_CONFIG);
+  const { tile, video, avatar, tag, micIcon } = createVideoTile(
+    peerId,
+    username,
+    null,
+    false,
+    videoEnabled,
+    audioEnabled
+  );
 
-      localSystemMessage(
-        "You left the call."
-      );
+  const remoteStream = new MediaStream();
+  video.srcObject = remoteStream;
 
-      /* If the other side is alone now, the server
-         will tell them the call ended. */
+  // Add local stream tracks to connection
+  if (localStream) {
+    localStream.getTracks().forEach((track) => {
+      pc.addTrack(track, localStream);
+    });
+  }
 
+  // Handle incoming remote tracks
+  pc.ontrack = (event) => {
+    event.streams[0].getTracks().forEach((track) => {
+      if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
+        remoteStream.addTrack(track);
+      }
+    });
+  };
+
+  // ICE Candidates
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit("call-signal", {
+        to: peerId,
+        signal: { candidate: event.candidate },
+      });
     }
+  };
 
+  const peerObj = { pc, tile, video, avatar, tag, micIcon, username };
+  peerConnections.set(peerId, peerObj);
+
+  // If initiator, create and send Offer
+  if (isInitiator) {
+    pc.createOffer()
+      .then((offer) => pc.setLocalDescription(offer))
+      .then(() => {
+        socket.emit("call-signal", {
+          to: peerId,
+          signal: pc.localDescription,
+        });
+      })
+      .catch((err) => console.warn("Error creating offer:", err));
   }
-);
 
+  return peerObj;
+}
 
-/*
-  Some browsers (iOS) freeze playback until a tap —
-  resume the audio context on any tap.
-*/
+// Media Controls: Mic Mute / Unmute
+muteButton.addEventListener("click", () => {
+  if (!localStream) return;
+  isMicMuted = !isMicMuted;
 
-document.addEventListener(
-  "pointerdown",
-  () => {
+  const audioTrack = localStream.getAudioTracks()[0];
+  if (audioTrack) audioTrack.enabled = !isMicMuted;
 
-    if (audioCtx && audioCtx.state === "suspended") {
+  muteButton.classList.toggle("off", isMicMuted);
 
-      audioCtx.resume().catch(
-        () => { /* still blocked — keep trying */ }
-      );
-
-    }
-
-  }
-);
-
-
-/* Connection lost while in call / ringing */
-
-socket.on(
-  "disconnect",
-  () => {
-
-    const ringing =
-      !incomingCall.classList.contains("hidden");
-
-
-    if (inCall || ringing) {
-
-      localSystemMessage(
-        "Connection lost. Call ended."
-      );
-
-      exitCallUI();
-
-    }
-
-  }
-);
-
-
-/* Tell the server when the tab closes mid-call */
-
-window.addEventListener(
-  "beforeunload",
-  () => {
-
-    if (inCall) {
-
-      socket.emit("call-leave");
-
-    }
-
-  }
-);
-
-/* =========================
-   SYSTEM MESSAGE
-========================= */
-
-socket.on(
-  "system-message",
-  (data) => {
-
-    const messageElement =
-      document.createElement("div");
-
-
-    messageElement.className =
-      "system-message";
-
-
-    messageElement.textContent =
-      data.text;
-
-
-    messages.appendChild(
-      messageElement
-    );
-
-
-    scrollMessagesToBottom();
-  }
-);
-
-
-/* =========================
-   RESET CHAT
-========================= */
-
-socket.on(
-  "clear-chat",
-  () => {
-
-    messages.innerHTML = "";
-
-  }
-);
-
-
-resetButton.addEventListener(
-  "click",
-  () => {
-
-    const confirmed = confirm(
-      "This will clear the chat for everyone in this room. Continue?"
-    );
-
-
-    if (confirmed) {
-
-      socket.emit("reset-chat");
-
+  const selfTile = videoGrid.querySelector('[data-peer-id="me"]');
+  if (selfTile) {
+    const icon = selfTile.querySelector(".video-tag-icon");
+    if (icon) {
+      icon.className = `video-tag-icon ${isMicMuted ? "muted" : ""}`;
+      icon.textContent = !isMicMuted ? "🎙️" : "🔇";
     }
   }
-);
 
+  socket.emit("call-media-state", {
+    audio: !isMicMuted,
+    video: !isCameraOff,
+  });
 
-/* =========================
-   PRESENCE
-========================= */
+  showToast(isMicMuted ? "Microphone muted" : "Microphone active");
+});
 
-socket.on(
-  "presence-update",
-  (people) => {
+// Media Controls: Camera Toggle
+cameraButton.addEventListener("click", async () => {
+  if (!localStream) return;
 
-    updatePeopleUI(people);
+  const videoTrack = localStream.getVideoTracks()[0];
 
-    updateCharacters(people);
+  if (!videoTrack) {
+    // Enable camera if previously audio-only
+    try {
+      const camStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: currentFacingMode },
+      });
+      const newTrack = camStream.getVideoTracks()[0];
+      localStream.addTrack(newTrack);
 
+      // Add track to active peer connections
+      peerConnections.forEach(({ pc }) => {
+        pc.addTrack(newTrack, localStream);
+      });
+
+      isCameraOff = false;
+    } catch (e) {
+      showToast("Cannot access camera.");
+      return;
+    }
+  } else {
+    isCameraOff = !isCameraOff;
+    videoTrack.enabled = !isCameraOff;
   }
-);
+
+  cameraButton.classList.toggle("off", isCameraOff);
+
+  const selfTile = videoGrid.querySelector('[data-peer-id="me"]');
+  if (selfTile) {
+    const avatar = selfTile.querySelector(".video-tile-avatar");
+    if (avatar) avatar.classList.toggle("hidden", !isCameraOff);
+  }
+
+  socket.emit("call-media-state", {
+    video: !isCameraOff,
+    audio: !isMicMuted,
+  });
+});
+
+// Flip Camera (Mobile front/back)
+flipCameraButton.addEventListener("click", async () => {
+  if (!localStream || isCameraOff) return;
+
+  currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
+  const oldTrack = localStream.getVideoTracks()[0];
+
+  try {
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: currentFacingMode },
+    });
+    const newTrack = newStream.getVideoTracks()[0];
+
+    if (oldTrack) {
+      localStream.removeTrack(oldTrack);
+      oldTrack.stop();
+    }
+    localStream.addTrack(newTrack);
+
+    // Replace track on peer connections
+    peerConnections.forEach(({ pc }) => {
+      const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
+      if (sender) sender.replaceTrack(newTrack);
+    });
+
+    const selfVideo = videoGrid.querySelector('[data-peer-id="me"] video');
+    if (selfVideo) selfVideo.srcObject = localStream;
+
+    showToast(`Switched camera to ${currentFacingMode}`);
+  } catch (err) {
+    showToast("Could not flip camera.");
+  }
+});
+
+// Fullscreen Call Toggle
+callFullscreenBtn.addEventListener("click", () => {
+  if (!document.fullscreenElement) {
+    callScreen.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
+});
+
+// Leave / End Call
+leaveCall.addEventListener("click", () => {
+  socket.emit("call-leave");
+  exitCallUI();
+  localSystemMessage("You left the call.");
+});
 
 
-/*
-  Tell server whether the user is active
-  or away.
-*/
+/* =========================================
+   SYSTEM MESSAGE & CHAT RESET
+========================================= */
+
+socket.on("system-message", (data) => {
+  localSystemMessage(data.text);
+});
+
+function localSystemMessage(text) {
+  const messageElement = document.createElement("div");
+  messageElement.className = "system-message";
+  messageElement.textContent = text;
+  messages.appendChild(messageElement);
+  scrollMessagesToBottom();
+}
+
+socket.on("clear-chat", () => {
+  messages.innerHTML = "";
+  showToast("Chat was reset.");
+});
+
+resetButton.addEventListener("click", () => {
+  if (confirm("Clear chat for everyone in this room?")) {
+    socket.emit("reset-chat");
+  }
+});
+
+
+/* =========================================
+   PRESENCE & CHARACTER AREA
+========================================= */
+
+socket.on("presence-update", (people) => {
+  updatePeopleUI(people);
+  updateCharacters(people);
+});
 
 function sendPresence(status) {
-
   if (!joinedChat) return;
-
-  socket.emit(
-    "presence-update",
-    status
-  );
+  socket.emit("presence-update", status);
 }
 
+document.addEventListener("visibilitychange", () => {
+  if (!joinedChat) return;
+  sendPresence(document.visibilityState === "visible" ? "active" : "away");
+});
 
-/*
-  Browser tab visibility.
-*/
+window.addEventListener("focus", () => {
+  if (joinedChat) sendPresence("active");
+});
 
-document.addEventListener(
-  "visibilitychange",
-  () => {
-
-    if (!joinedChat) return;
-
-
-    if (document.visibilityState === "visible") {
-
-      sendPresence("active");
-
-    } else {
-
-      sendPresence("away");
-
-    }
-  }
-);
-
-
-/*
-  Window focus / blur gives us an additional
-  signal on desktop.
-*/
-
-window.addEventListener(
-  "focus",
-  () => {
-
-    if (joinedChat) {
-      sendPresence("active");
-    }
-
-  }
-);
-
-
-window.addEventListener(
-  "blur",
-  () => {
-
-    if (joinedChat) {
-      sendPresence("away");
-    }
-
-  }
-);
-
-
-/*
-  Heartbeat keeps the server aware that
-  the browser is still alive.
-*/
+window.addEventListener("blur", () => {
+  if (joinedChat) sendPresence("away");
+});
 
 function startPresenceHeartbeat() {
-
-  if (presenceHeartbeat) {
-    clearInterval(presenceHeartbeat);
-  }
-
-
-  presenceHeartbeat = setInterval(
-    () => {
-
-      if (
-        joinedChat &&
-        document.visibilityState === "visible"
-      ) {
-
-        socket.emit(
-          "presence-heartbeat"
-        );
-
-      }
-
-    },
-    5000
-  );
+  if (presenceHeartbeat) clearInterval(presenceHeartbeat);
+  presenceHeartbeat = setInterval(() => {
+    if (joinedChat && document.visibilityState === "visible") {
+      socket.emit("presence-heartbeat");
+    }
+  }, 5000);
 }
 
-
-/* =========================
-   PEOPLE UI
-========================= */
-
 function updatePeopleUI(people) {
-
-  peopleCount.textContent =
-    people.length;
-
-
+  peopleCount.textContent = people.length;
   peopleList.innerHTML = "";
 
-
   people.forEach((person) => {
+    const row = document.createElement("div");
+    row.className = "person-row";
 
-    const row =
-      document.createElement("div");
+    const left = document.createElement("div");
+    left.className = "person-left";
 
+    const dot = document.createElement("span");
+    dot.className = `status-dot ${person.status}`;
 
-    row.className =
-      "person-row";
-
-
-    const left =
-      document.createElement("div");
-
-
-    left.className =
-      "person-left";
-
-
-    const dot =
-      document.createElement("span");
-
-
-    dot.className =
-      `status-dot ${person.status}`;
-
-
-    const name =
-      document.createElement("span");
-
-
-    name.textContent =
-      person.username;
-
+    const name = document.createElement("span");
+    name.textContent = person.username === currentUsername ? `${person.username} (You)` : person.username;
 
     left.appendChild(dot);
     left.appendChild(name);
 
-
-    const status =
-      document.createElement("span");
-
-
-    status.className =
-      `person-status ${person.status}`;
-
-
-    status.textContent =
-      person.status === "active"
-        ? "Active"
-        : "Away";
-
+    const status = document.createElement("span");
+    status.className = `person-status ${person.status}`;
+    status.textContent = person.status === "active" ? "Active" : "Away";
 
     row.appendChild(left);
     row.appendChild(status);
 
-
     peopleList.appendChild(row);
-
   });
 }
 
+peopleButton.addEventListener("click", () => {
+  peoplePanel.classList.toggle("hidden");
+});
 
-/* =========================
-   PEOPLE PANEL
-========================= */
-
-peopleButton.addEventListener(
-  "click",
-  () => {
-
-    peoplePanel.classList.toggle(
-      "hidden"
-    );
-
-  }
-);
+closePeople.addEventListener("click", () => {
+  peoplePanel.classList.add("hidden");
+});
 
 
-closePeople.addEventListener(
-  "click",
-  () => {
-
-    peoplePanel.classList.add(
-      "hidden"
-    );
-
-  }
-);
-
-
-/* =========================
-   CHARACTER SYSTEM
-========================= */
+/* =========================================
+   ANIMATED AVATAR CHARACTERS
+========================================= */
 
 function updateCharacters(people) {
-
   characterArea.innerHTML = "";
+  const activePeople = people.filter((p) => p.status === "active");
 
-
-  /*
-    Only show active people.
-
-    Away users disappear from the
-    character area.
-  */
-
-  const activePeople =
-    people.filter(
-      (person) =>
-        person.status === "active"
-    );
-
-
-  activePeople.forEach(
-    (person, index) => {
-
-      const character =
-        createCharacter(
-          person,
-          index,
-          activePeople.length
-        );
-
-
-      characterArea.appendChild(
-        character
-      );
-
-    }
-  );
+  activePeople.forEach((person, index) => {
+    const character = createCharacter(person, index, activePeople.length);
+    characterArea.appendChild(character);
+  });
 }
 
+function createCharacter(person, index, total) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "character-wrapper";
+  wrapper.dataset.username = person.username;
 
-function createCharacter(
-  person,
-  index,
-  total
-) {
+  const position = total === 1 ? 50 : 20 + (index / (total - 1)) * 60;
+  wrapper.style.left = `${position}%`;
 
-  const wrapper =
-    document.createElement("div");
+  const hue = getUsernameHue(person.username);
+  wrapper.style.setProperty("--character-hue", hue);
 
+  const character = document.createElement("div");
+  character.className = "character";
 
-  wrapper.className =
-    "character-wrapper";
+  const head = document.createElement("div");
+  head.className = "character-head";
 
-
-  wrapper.dataset.username =
-    person.username;
-
-
-  /*
-    Spread characters across
-    the bottom of the screen.
-  */
-
-  const position =
-    total === 1
-      ? 50
-      : 20 + (
-          index / (total - 1)
-        ) * 60;
-
-
-  wrapper.style.left =
-    `${position}%`;
-
-
-  /*
-    Generate a stable visual
-    identity from the username.
-  */
-
-  const hue =
-    getUsernameHue(
-      person.username
-    );
-
-
-  wrapper.style.setProperty(
-    "--character-hue",
-    hue
-  );
-
-
-  const character =
-    document.createElement("div");
-
-
-  character.className =
-    "character";
-
-
-  /*
-    Head
-  */
-
-  const head =
-    document.createElement("div");
-
-
-  head.className =
-    "character-head";
-
-
-  /*
-    Eyes
-  */
-
-  const face =
-    document.createElement("div");
-
-
-  face.className =
-    "character-face";
-
-
-  face.innerHTML = `
-    <span></span>
-    <span></span>
-  `;
-
+  const face = document.createElement("div");
+  face.className = "character-face";
+  face.innerHTML = "<span></span><span></span>";
 
   head.appendChild(face);
 
-
-  /*
-    Curved body
-  */
-
-  const body =
-    document.createElement("div");
-
-
-  body.className =
-    "character-body";
-
+  const body = document.createElement("div");
+  body.className = "character-body";
 
   character.appendChild(head);
-
   character.appendChild(body);
 
-
-  /*
-    Name bubble
-  */
-
-  const name =
-    document.createElement("div");
-
-
-  name.className =
-    "character-name";
-
-
-  name.textContent =
-    person.username;
-
+  const name = document.createElement("div");
+  name.className = "character-name";
+  name.textContent = person.username;
 
   wrapper.appendChild(character);
-
   wrapper.appendChild(name);
-
 
   return wrapper;
 }
 
-
-/*
-  Create a stable hue from
-  the username.
-*/
-
 function getUsernameHue(username) {
-
   let hash = 0;
-
-
-  for (
-    let i = 0;
-    i < username.length;
-    i++
-  ) {
-
-    hash =
-      username.charCodeAt(i) +
-      ((hash << 5) - hash);
-
+  for (let i = 0; i < username.length; i++) {
+    hash = username.charCodeAt(i) + ((hash << 5) - hash);
   }
-
-
   return Math.abs(hash) % 360;
 }
 
 
-/* =========================
-   SCROLL
-========================= */
+/* =========================================
+   HELPERS & TOAST
+========================================= */
 
 function scrollMessagesToBottom() {
-
-  requestAnimationFrame(
-    () => {
-
-      messages.scrollTop =
-        messages.scrollHeight;
-
-    }
-  );
+  requestAnimationFrame(() => {
+    messages.scrollTop = messages.scrollHeight;
+  });
 }
 
-
-/* =========================
-   HTML ESCAPING
-========================= */
-
-function escapeHTML(text) {
-
-  const div =
-    document.createElement("div");
-
-
-  div.textContent =
-    text;
-
-
-  return div.innerHTML;
+function formatDuration(totalSeconds) {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
+
+function showToast(message, type = "info") {
+  const toast = document.createElement("div");
+  toast.className = `toast ${type === "success" ? "toast-success" : ""}`;
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(-10px)";
+    toast.style.transition = "all 0.25s ease";
+    setTimeout(() => toast.remove(), 250);
+  }, 3200);
+}
+
+// Window unload cleanup
+window.addEventListener("beforeunload", () => {
+  if (inCall) socket.emit("call-leave");
+});
+
+socket.on("disconnect", () => {
+  if (inCall) {
+    localSystemMessage("Connection lost. Call ended.");
+    exitCallUI();
+  }
+});
+
