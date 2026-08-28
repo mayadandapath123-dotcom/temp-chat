@@ -7,20 +7,16 @@ const { Server } = require("socket.io");
 const app = express();
 const server = http.createServer(app);
 
-// Larger payload limit for voice notes & view-once photos (15 MB)
 const io = new Server(server, {
   maxHttpBufferSize: 15 * 1024 * 1024,
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// Serve static files from BOTH public/ folder AND root project folder
+// Serve static assets from both public/ and root directory
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.static(__dirname));
 
-// Route fallback: send index.html for page/room URLs, but 404 for missing static assets (.css, .js)
+// Fallback for room links (e.g. /?room=BLUE123)
 app.use((req, res) => {
   if (path.extname(req.path)) {
     return res.status(404).send("File not found");
@@ -68,17 +64,12 @@ function removeFromCall(socket) {
   socket.to(socket.room).emit("call-peer-left", { id: socket.id });
 
   if (roomCall.size < 2) {
-    if (roomCall.size === 0) {
-      calls.delete(socket.room);
-    }
+    if (roomCall.size === 0) calls.delete(socket.room);
     io.to(socket.room).emit("call-ended");
   }
 }
 
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
-
-  // Join Room
   socket.on("join-room", ({ username, room }) => {
     username = String(username || "").trim().slice(0, 24);
     room = String(room || "").trim().toUpperCase().slice(0, 24);
@@ -88,9 +79,7 @@ io.on("connection", (socket) => {
       const oldRoom = socket.room;
       removeFromCall(socket);
       socket.leave(oldRoom);
-      socket.to(oldRoom).emit("system-message", {
-        text: `${socket.username} left the chat.`,
-      });
+      socket.to(oldRoom).emit("system-message", { text: `${socket.username} left the chat.` });
       broadcastPresence(oldRoom);
     }
 
@@ -99,15 +88,11 @@ io.on("connection", (socket) => {
     socket.room = room;
     socket.presenceStatus = "active";
 
-    socket.to(room).emit("system-message", {
-      text: `${username} joined the chat.`,
-    });
-
+    socket.to(room).emit("system-message", { text: `${username} joined the chat.` });
     broadcastPresence(room);
     startPresenceTimeout(socket);
   });
 
-  // Text Message
   socket.on("send-message", (message) => {
     if (!socket.room || !socket.username) return;
     message = String(message || "").trim().slice(0, 1500);
@@ -121,7 +106,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Voice Note (Ephemeral Audio)
   socket.on("voice-message", (data) => {
     if (!socket.room || !socket.username || !data || !data.audio) return;
     io.to(socket.room).emit("voice-message", {
@@ -133,7 +117,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Single-Time View-Once Photo
   socket.on("single-photo", (data) => {
     if (!socket.room || !socket.username || !data || !data.image) return;
     io.to(socket.room).emit("single-photo", {
@@ -146,7 +129,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Photo Opened Notification
   socket.on("photo-opened", (data) => {
     if (!socket.room || !socket.username || !data || !data.photoId) return;
     io.to(socket.room).emit("photo-opened", {
@@ -156,7 +138,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Video / Voice Call Signaling
   socket.on("call-start", (data = {}) => {
     if (!socket.room || !socket.username) return;
     const callType = data.callType === "audio" ? "audio" : "video";
@@ -173,14 +154,14 @@ io.on("connection", (socket) => {
       username: info.username,
       callType: info.callType,
       videoEnabled: info.videoEnabled,
-      audioEnabled: info.audioEnabled
+      audioEnabled: info.audioEnabled,
     }));
 
     roomCall.set(socket.id, {
       username: socket.username,
       callType,
       videoEnabled: callType === "video",
-      audioEnabled: true
+      audioEnabled: true,
     });
 
     socket.to(socket.room).emit("call-start", {
@@ -195,7 +176,7 @@ io.on("connection", (socket) => {
         username: socket.username,
         callType,
         videoEnabled: callType === "video",
-        audioEnabled: true
+        audioEnabled: true,
       });
     });
   });
@@ -215,7 +196,7 @@ io.on("connection", (socket) => {
       username: socket.username,
       callType,
       videoEnabled: data.videoEnabled !== false && callType === "video",
-      audioEnabled: data.audioEnabled !== false
+      audioEnabled: data.audioEnabled !== false,
     });
 
     const existing = [...roomCall.entries()]
@@ -225,7 +206,7 @@ io.on("connection", (socket) => {
         username: info.username,
         callType: info.callType,
         videoEnabled: info.videoEnabled,
-        audioEnabled: info.audioEnabled
+        audioEnabled: info.audioEnabled,
       }));
 
     io.to(socket.id).emit("call-peers", existing);
@@ -236,7 +217,7 @@ io.on("connection", (socket) => {
         username: socket.username,
         callType,
         videoEnabled: data.videoEnabled !== false && callType === "video",
-        audioEnabled: data.audioEnabled !== false
+        audioEnabled: data.audioEnabled !== false,
       });
     });
   });
@@ -268,9 +249,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("call-leave", () => {
-    removeFromCall(socket);
-  });
+  socket.on("call-leave", () => removeFromCall(socket));
 
   socket.on("reset-chat", () => {
     if (!socket.room) return;
@@ -299,9 +278,7 @@ io.on("connection", (socket) => {
     removeFromCall(socket);
     if (socket.room && socket.username) {
       const room = socket.room;
-      socket.to(room).emit("system-message", {
-        text: `${socket.username} left the chat.`,
-      });
+      socket.to(room).emit("system-message", { text: `${socket.username} left the chat.` });
       setTimeout(() => broadcastPresence(room), 50);
     }
     console.log("User disconnected:", socket.id);
@@ -310,5 +287,5 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Temp Chat running on http://0.0.0.0:${PORT}`);
+  console.log(`Temp Chat running on http://localhost:${PORT}`);
 });
