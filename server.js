@@ -1,12 +1,13 @@
 const express = require("express");
 const http = require("http");
 const path = require("path");
+const fs = require("fs");
 const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
 
-// In-memory buffer limit for voice notes & view-once photos (15 MB)
+// Larger payload limit for voice notes & view-once photos (15 MB)
 const io = new Server(server, {
   maxHttpBufferSize: 15 * 1024 * 1024,
   cors: {
@@ -15,11 +16,20 @@ const io = new Server(server, {
   }
 });
 
+// Serve static files from BOTH public/ folder AND root project folder
 app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(__dirname));
 
-// Fallback to index.html for invite links (e.g. /?room=BLUE123)
+// Route fallback: send index.html for page/room URLs, but 404 for missing static assets (.css, .js)
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  if (path.extname(req.path)) {
+    return res.status(404).send("File not found");
+  }
+  const publicIndex = path.join(__dirname, "public", "index.html");
+  if (fs.existsSync(publicIndex)) {
+    return res.sendFile(publicIndex);
+  }
+  res.sendFile(path.join(__dirname, "index.html"));
 });
 
 const PRESENCE_TIMEOUT = 12000;
@@ -111,7 +121,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Voice Note
+  // Voice Note (Ephemeral Audio)
   socket.on("voice-message", (data) => {
     if (!socket.room || !socket.username || !data || !data.audio) return;
     io.to(socket.room).emit("voice-message", {
@@ -123,7 +133,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Single-Time View-Once Photo (Never saved to disk/DB)
+  // Single-Time View-Once Photo
   socket.on("single-photo", (data) => {
     if (!socket.room || !socket.username || !data || !data.image) return;
     io.to(socket.room).emit("single-photo", {
@@ -300,5 +310,5 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Temp Chat running on port ${PORT}`);
+  console.log(`Temp Chat running on http://0.0.0.0:${PORT}`);
 });

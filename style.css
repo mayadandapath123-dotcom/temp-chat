@@ -1,0 +1,72 @@
+/* =========================================
+   VIDEO GRID
+========================================= */
+.video-grid {
+  flex: 1;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  align-content: stretch;
+  justify-content: stretch;
+  min-height: 0;
+  overflow: hidden;
+  padding: 4px;
+}
+
+/* 1 participant (e.g. self waiting) */
+.video-grid.single-peer {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 2 participants (stacked 50/50 on mobile, side by side on desktop) */
+.video-grid.two-peers {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+@media (min-width: 600px) {
+  .video-grid.two-peers {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr;
+  }
+}
+
+.video-grid.three-peers,
+.video-grid.four-peers {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.video-tile {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #101018;
+  border: 1.5px solid var(--border-light);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.video-tile.is-speaking {
+  border-color: var(--green);
+  box-shadow: 0 0 20px var(--green-glow);
+}
+
+.video-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #09090f;
+  display: block;
+}
