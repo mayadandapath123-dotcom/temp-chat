@@ -33,7 +33,7 @@
         <span>🔗 You were invited to join room <strong id="invited-room-code"></strong></span>
       </div>
 
-      <div class="join-form">
+      <form id="join-form" class="join-form">
         <label for="username">
           <span>Username</span>
           <button type="button" id="randomize-btn" class="randomize-btn" title="Generate random username">
@@ -58,13 +58,14 @@
           autocomplete="off"
           autocapitalize="characters"
           spellcheck="false"
+          required
         />
 
-        <button id="join-button" class="primary-button" type="button">
+        <button id="join-button" class="primary-button" type="submit">
           <span>Join Room</span>
           <span class="button-arrow">→</span>
         </button>
-      </div>
+      </form>
 
       <p class="privacy-note">
         🔒 End-to-end ephemeral • In-memory only
@@ -88,7 +89,7 @@
         <!-- Share Room Button -->
         <button id="share-button" class="action-btn share-btn" type="button" title="Share room invite link">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-            <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>
+            <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92z"/>
           </svg>
           <span class="btn-text">Share</span>
         </button>
@@ -130,19 +131,24 @@
       <div id="character-area" aria-hidden="true"></div>
     </main>
 
-    <!-- PHOTO PREVIEW BAR -->
+    <!-- MOBILE-OPTIMIZED PHOTO PREVIEW BAR -->
     <div id="photo-preview-bar" class="photo-preview-bar hidden">
-      <div class="preview-thumb-container">
-        <img id="preview-img" src="" alt="Selected preview" />
-        <button type="button" id="remove-photo-btn" class="preview-remove-btn">✕</button>
-      </div>
-      <div class="preview-controls">
-        <button type="button" id="view-once-toggle" class="view-once-pill active">
+      <div class="preview-top-row">
+        <div class="preview-thumb-container">
+          <img id="preview-img" src="" alt="Selected preview" />
+          <button type="button" id="remove-photo-btn" class="preview-remove-btn" title="Cancel">✕</button>
+        </div>
+        <button type="button" id="view-once-toggle" class="view-once-pill active" title="Toggle View Once">
           <span class="view-once-badge">①</span>
           <span class="view-once-text">View Once: <strong>ON</strong></span>
         </button>
-        <input type="text" id="photo-caption-input" class="photo-caption-input" placeholder="Add an ephemeral caption..." maxlength="150" />
-        <button type="button" id="send-photo-btn" class="send-photo-btn">Send Photo ➔</button>
+      </div>
+      <div class="preview-bottom-row">
+        <input type="text" id="photo-caption-input" class="photo-caption-input" placeholder="Add a caption (optional)..." maxlength="150" />
+        <button type="button" id="send-photo-btn" class="send-photo-btn">
+          <span>Send</span>
+          <span class="btn-arrow">➔</span>
+        </button>
       </div>
     </div>
 
@@ -311,5 +317,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a3250abf5a70897e',t:'MTc4NzkzODIwNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v3d52b47920f24c319d37e2661827c42b1787588026925" integrity="sha512-d9sL6GJLXn6fInD1+TVXhTcQOsmxeHfmHAvwGDIxp5TO+uo1fiWW7mHomMj4MLRlCsJDTqXzWLHJFFlPCEIj/A==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f"}' crossorigin="anonymous"></script>
 </body>
 </html>
