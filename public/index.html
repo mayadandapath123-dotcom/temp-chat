@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#08080b" />
-  <title>TempChat — Private, Real-Time & Ephemeral</title>
+  <meta name="theme-color" content="#07080b" />
+  <title>TempChat — Ephemeral Calls, Media & Messaging</title>
   
   <style>
     .hidden { display: none !important; }
@@ -15,133 +15,215 @@
 
 <body>
 
-  <!-- JOIN SCREEN -->
+  <!-- =========================================================
+       JOIN SCREEN
+  ========================================================= -->
   <div id="join-screen" class="screen">
-    <div class="join-card">
-      <div class="brand-mark">
-        <span></span>
-        <span></span>
+    <div class="join-card glass-modal-card">
+      <div class="brand-badge-row">
+        <div class="brand-icon-wrap">
+          <span class="icon-sparkle">✦</span>
+          <span class="icon-bubble">💬</span>
+        </div>
+        <span class="eyebrow-pill">100% PRIVATE • ZERO STORAGE</span>
       </div>
 
-      <p class="eyebrow">100% PRIVATE • ZERO STORAGE</p>
-      <h1>TempChat</h1>
+      <h1 class="hero-brand-title">TempChat</h1>
       <p class="join-description">
-        Anonymous messaging, video calls, voice notes & view-once photos. Nothing is saved.
+        Anonymous chat, multi-peer video & audio calls, view-once photos & voice notes. Ephemeral & memory-only.
       </p>
 
-      <div id="invite-banner" class="invite-banner hidden">
-        <span>🔗 You were invited to join room <strong id="invited-room-code"></strong></span>
+      <!-- INVITE ONLY BANNER (Visible when opened via share link) -->
+      <div id="invite-banner" class="invite-banner-card glass-card hidden">
+        <div class="invite-banner-left">
+          <span class="invite-icon">🔗</span>
+          <div class="invite-details">
+            <span class="invite-tag">ROOM INVITATION</span>
+            <strong id="invited-room-code" class="invite-room-code">#ROOM</strong>
+          </div>
+        </div>
+        <button type="button" id="change-room-btn" class="change-room-btn" title="Change to different room">
+          Change
+        </button>
       </div>
 
       <form id="join-form" class="join-form">
-        <label for="username">
-          <span>Username</span>
-          <button type="button" id="randomize-btn" class="randomize-btn" title="Generate random username">
-            🎲 Random
+        <!-- USERNAME INPUT WITH RANDOMIZE -->
+        <div class="input-group">
+          <label for="username" class="field-label">
+            <span>Your Username</span>
+            <button type="button" id="randomize-btn" class="randomize-btn" title="Generate random username">
+              🎲 Random
+            </button>
+          </label>
+          <div class="input-wrap">
+            <input
+              id="username"
+              type="text"
+              placeholder="e.g. TitanWolf42"
+              maxlength="20"
+              autocomplete="nickname"
+              spellcheck="false"
+              required
+            />
+          </div>
+        </div>
+
+        <!-- ROOM CODE INPUT (Hidden when invited, visible when normal join) -->
+        <div id="room-input-group" class="input-group">
+          <label for="room" class="field-label">Room Code</label>
+          <div class="input-wrap">
+            <input
+              id="room"
+              type="text"
+              placeholder="e.g. BLUE123"
+              maxlength="20"
+              autocomplete="off"
+              autocapitalize="characters"
+              spellcheck="false"
+              required
+            />
+          </div>
+        </div>
+
+        <div class="join-buttons-stack">
+          <button id="join-button" class="primary-gold-btn" type="submit">
+            <span id="join-button-text">Enter Room</span>
+            <span class="btn-arrow-icon">➔</span>
           </button>
-        </label>
-        <input
-          id="username"
-          type="text"
-          placeholder="e.g. SwiftFox42"
-          maxlength="20"
-          autocomplete="nickname"
-          spellcheck="false"
-        />
-
-        <label for="room">Room code</label>
-        <input
-          id="room"
-          type="text"
-          placeholder="e.g. BLUE123"
-          maxlength="20"
-          autocomplete="off"
-          autocapitalize="characters"
-          spellcheck="false"
-          required
-        />
-
-        <button id="join-button" class="primary-button" type="submit">
-          <span>Join Room</span>
-          <span class="button-arrow">→</span>
-        </button>
+        </div>
       </form>
 
-      <p class="privacy-note">
-        🔒 End-to-end ephemeral • In-memory only
-      </p>
+      <div class="join-extra-links">
+        <button type="button" id="open-guide-btn-join" class="text-link-btn">
+          📖 Read User Manual & Features Guide
+        </button>
+      </div>
+
+      <div class="security-footer">
+        <span class="sec-dot"></span>
+        <span>End-to-End Ephemeral • Zero logs saved</span>
+      </div>
     </div>
   </div>
 
-  <!-- CHAT SCREEN -->
+  <!-- =========================================================
+       CHAT SCREEN
+  ========================================================= -->
   <div id="chat-screen" class="hidden">
-    <header class="chat-header">
+
+    <!-- Active Room Call Banner (Drop-in / Drop-out) -->
+    <div id="active-call-banner" class="active-call-banner glass-bar hidden">
+      <div class="call-banner-left">
+        <span class="live-pulse-dot"></span>
+        <span id="call-banner-info">📞 Active Call in progress</span>
+      </div>
+      <button type="button" id="join-active-call-btn" class="join-active-call-btn">
+        <span>Join Call</span>
+        <span class="btn-sparkle">✨</span>
+      </button>
+    </div>
+
+    <!-- MAIN CHAT HEADER -->
+    <header class="chat-header glass-header">
+      <!-- High-visibility TempChat Logo in Top Corner -->
       <div class="header-left">
-        <div class="brand-small">TempChat</div>
-        <button id="people-button" class="people-button" type="button">
-          <span class="people-icon">●</span>
+        <div class="brand-logo-container">
+          <div class="brand-mini-icon">✦</div>
+          <span class="brand-title-text">TempChat</span>
+        </div>
+        <button id="people-button" class="people-pill-btn" type="button" title="View room members">
+          <span class="people-live-dot">●</span>
           <span id="people-count">0</span>
-          <span class="people-label">online</span>
+          <span class="people-text">online</span>
         </button>
       </div>
 
       <div class="header-actions">
+        <!-- User Manual & Guide Button -->
+        <button id="guide-button" class="header-icon-btn guide-btn" type="button" title="Open User Manual & Pamphlet">
+          <span>📖</span>
+          <span class="btn-label">Manual</span>
+        </button>
+
         <!-- Share Room Button -->
-        <button id="share-button" class="action-btn share-btn" type="button" title="Share room invite link">
+        <button id="share-button" class="header-icon-btn share-btn" type="button" title="Share invite link">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
             <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92z"/>
           </svg>
-          <span class="btn-text">Share</span>
+          <span class="btn-label">Share</span>
         </button>
 
         <!-- Voice Call Button -->
-        <button id="voice-call-button" class="action-btn" type="button" title="Start voice call">
+        <button id="voice-call-button" class="header-icon-btn" type="button" title="Start voice call">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
             <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
           </svg>
         </button>
 
         <!-- Video Call Button -->
-        <button id="video-call-button" class="action-btn video-call-btn" type="button" title="Start video call">
+        <button id="video-call-button" class="header-icon-btn video-call-btn" type="button" title="Start video call">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
             <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
           </svg>
         </button>
 
-        <span id="room-name" class="room-name" title="Click to copy room link"></span>
-        <button id="reset-button" class="reset-button" type="button">Reset</button>
+        <!-- Room Code Pill -->
+        <span id="room-name" class="room-pill" title="Click to share room link"></span>
+
+        <!-- Distinct Luxury Red Glass Reset Button -->
+        <button id="reset-button" class="reset-danger-btn" type="button" title="Clear room chat for everyone">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+          </svg>
+          <span>Reset</span>
+        </button>
       </div>
     </header>
 
-    <!-- PEOPLE PANEL -->
-    <div id="people-panel" class="people-panel hidden">
+    <!-- PEOPLE / MEMBERS PANEL -->
+    <div id="people-panel" class="people-panel glass-modal-card hidden">
       <div class="people-panel-header">
-        <strong>People in this room</strong>
-        <button id="close-people" type="button">×</button>
+        <strong>Members in Room</strong>
+        <button id="close-people" type="button" class="panel-close-btn">✕</button>
       </div>
       <div id="people-list"></div>
       <div class="people-panel-footer">
-        <button type="button" id="panel-share-btn" class="secondary-btn">🔗 Copy Room Invite Link</button>
+        <button type="button" id="panel-share-btn" class="secondary-gold-btn">🔗 Copy Room Invite Link</button>
       </div>
     </div>
 
-    <!-- CHAT CONTENT -->
+    <!-- CHAT MESSAGES CONTENT -->
     <main id="chat-content">
       <div id="messages"></div>
+
+      <!-- Real-Time Typing Indicator for Other Users -->
+      <div id="typing-indicator" class="typing-indicator-pill glass-card hidden">
+        <div class="typing-animation-wave">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+        <span id="typing-text" class="typing-text-content">Someone is typing…</span>
+      </div>
+
+      <!-- Presence Characters Layer -->
       <div id="character-area" aria-hidden="true"></div>
     </main>
 
     <!-- MOBILE-OPTIMIZED PHOTO PREVIEW BAR -->
-    <div id="photo-preview-bar" class="photo-preview-bar hidden">
+    <div id="photo-preview-bar" class="photo-preview-bar glass-bar hidden">
       <div class="preview-top-row">
-        <div class="preview-thumb-container">
-          <img id="preview-img" src="" alt="Selected preview" />
-          <button type="button" id="remove-photo-btn" class="preview-remove-btn" title="Cancel">✕</button>
+        <div class="preview-thumb-wrap">
+          <img id="preview-img" src="" alt="Selected capture" />
+          <button type="button" id="remove-photo-btn" class="preview-remove-btn" title="Cancel photo">✕</button>
         </div>
-        <button type="button" id="view-once-toggle" class="view-once-pill active" title="Toggle View Once">
-          <span class="view-once-badge">①</span>
-          <span class="view-once-text">View Once: <strong>ON</strong></span>
-        </button>
+        <div class="preview-actions-wrap">
+          <button type="button" id="view-once-toggle" class="view-once-pill active" title="Toggle View Once Mode">
+            <span class="view-once-badge-icon">①</span>
+            <span class="view-once-text">View Once: <strong>ON</strong></span>
+          </button>
+        </div>
       </div>
       <div class="preview-bottom-row">
         <input type="text" id="photo-caption-input" class="photo-caption-input" placeholder="Add a caption (optional)..." maxlength="150" />
@@ -152,64 +234,95 @@
       </div>
     </div>
 
-    <!-- COMPOSER -->
-    <form id="message-form">
-      <div class="composer">
-        <input type="file" id="photo-file-input" accept="image/*" style="display: none;" />
-        <button type="button" id="photo-button" class="composer-btn photo-btn" title="Send View-Once Photo">
+    <!-- CHAT COMPOSER WITH DIRECT CAMERA SNAP & GALLERY PICKER -->
+    <form id="message-form" class="glass-composer-bar">
+      <!-- Hidden file inputs for direct camera capture vs gallery selection -->
+      <input type="file" id="camera-file-input" accept="image/*" capture="environment" style="display: none;" />
+      <input type="file" id="gallery-file-input" accept="image/*" style="display: none;" />
+
+      <div id="composer-container" class="composer-box glass-composer">
+        <!-- Direct Camera Snap Button -->
+        <button type="button" id="camera-snap-button" class="composer-action-btn camera-btn" title="Direct Snap & Send Camera Photo">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <circle cx="12" cy="12" r="3.2"/>
+            <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+          </svg>
+        </button>
+
+        <!-- Gallery / File Upload Button -->
+        <button type="button" id="gallery-button" class="composer-action-btn gallery-btn" title="Select photo from gallery">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor">
             <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
           </svg>
         </button>
 
-        <input id="message-input" type="text" placeholder="Type a message..." autocomplete="off" maxlength="1000" />
+        <!-- Typist Visual Glow Badge -->
+        <div id="typist-status-badge" class="typist-status-badge hidden">
+          <span class="typist-pen-icon">✍️</span>
+        </div>
 
-        <button type="button" id="mic-button" class="composer-btn mic-button" title="Record Voice Note">
+        <input
+          id="message-input"
+          type="text"
+          placeholder="Type a message..."
+          autocomplete="off"
+          maxlength="1000"
+        />
+
+        <!-- Mic Button for Voice Notes -->
+        <button type="button" id="mic-button" class="composer-action-btn mic-btn" title="Record Voice Note">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor">
             <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
             <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
           </svg>
         </button>
 
-        <button type="submit" id="send-button"><span>↑</span></button>
+        <!-- Send Button -->
+        <button type="submit" id="send-button" class="send-message-btn" title="Send message">
+          <span>↑</span>
+        </button>
       </div>
 
-      <!-- VOICE RECORDING BAR -->
-      <div id="record-bar" class="record-bar hidden">
-        <span class="record-dot"></span>
+      <!-- VOICE RECORDING STATUS BAR -->
+      <div id="record-bar" class="record-bar glass-card hidden">
+        <span class="record-pulse-dot"></span>
         <span id="record-timer" class="record-timer">0:00 / 1:00</span>
         <span class="record-hint">Recording voice note…</span>
-        <button type="button" id="cancel-record" class="record-cancel">✕</button>
-        <button type="button" id="send-record" class="record-send">Send</button>
+        <button type="button" id="cancel-record" class="record-cancel-btn">✕</button>
+        <button type="button" id="send-record" class="record-send-btn">Send</button>
       </div>
     </form>
   </div>
 
-  <!-- INCOMING CALL OVERLAY -->
+  <!-- =========================================================
+       INCOMING CALL OVERLAY
+  ========================================================= -->
   <div id="incoming-call" class="call-overlay hidden">
-    <div class="call-card">
-      <div class="call-ring">
-        <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+    <div class="call-card glass-modal-card">
+      <div class="call-ring-glow">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor">
           <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
         </svg>
       </div>
 
       <p class="call-overlay-title">
-        <strong id="incoming-name"></strong>
+        <strong id="incoming-name">Peer</strong>
         <span id="incoming-call-type-text">is calling…</span>
       </p>
       <p class="call-overlay-sub">
-        TEMP <span id="incoming-call-badge">CALL</span> · ROOM <span id="incoming-room"></span>
+        TEMP <span id="incoming-call-badge">VIDEO</span> · ROOM <span id="incoming-room"></span>
       </p>
 
       <div class="call-overlay-actions">
-        <button id="decline-call" class="call-decline" type="button">Decline</button>
-        <button id="accept-call" class="call-accept" type="button">Accept</button>
+        <button id="decline-call" class="call-decline-btn" type="button">Decline</button>
+        <button id="accept-call" class="call-accept-btn" type="button">Accept</button>
       </div>
     </div>
   </div>
 
-  <!-- VIDEO & VOICE CALL SCREEN -->
+  <!-- =========================================================
+       CINEMATIC VIDEO & VOICE CALL SCREEN
+  ========================================================= -->
   <div id="call-screen" class="call-screen hidden">
     <div class="call-screen-header">
       <div class="call-header-info">
@@ -217,35 +330,62 @@
         <h2 id="call-room-label" class="call-room-label">Room ...</h2>
       </div>
       <div class="call-header-right">
-        <span id="call-timer" class="call-timer">0:00</span>
-        <button id="call-fullscreen-btn" class="call-mini-btn" type="button">⛶</button>
+        <span id="call-timer" class="call-timer glass-pill">0:00</span>
+        <button id="call-fullscreen-btn" class="call-mini-btn glass-btn" type="button" title="Fullscreen">⛶</button>
       </div>
     </div>
 
-    <!-- Video Grid -->
+    <!-- Video Grid (Non-stretched, full-frame layout) -->
     <div id="video-grid" class="video-grid"></div>
 
-    <!-- Call Controls -->
-    <div class="call-controls">
-      <button id="mute-button" class="call-ctl" type="button" title="Mute Mic">
+    <!-- In-Call Floating Message Popup Heads-up Container -->
+    <div id="call-heads-up-container" class="call-heads-up-container"></div>
+
+    <!-- Floating In-Call Chat Drawer (Glass Style) -->
+    <div id="call-chat-drawer" class="call-chat-drawer glass-modal-card hidden">
+      <div class="call-chat-header">
+        <div class="call-chat-title">
+          <span>💬 In-Call Live Chat</span>
+        </div>
+        <button id="close-call-chat" type="button" class="call-chat-close-btn">✕</button>
+      </div>
+      <div id="call-chat-messages" class="call-chat-messages"></div>
+      <form id="call-chat-form" class="call-chat-form">
+        <input type="text" id="call-chat-input" placeholder="Type message in call..." autocomplete="off" maxlength="1000" />
+        <button type="submit" id="call-chat-send-btn">➔</button>
+      </form>
+    </div>
+
+    <!-- Call Controls Dock (Glass Style) -->
+    <div class="call-controls glass-dock">
+      <button id="mute-button" class="call-ctl glass-ctl" type="button" title="Mute Mic">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
           <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
           <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
         </svg>
       </button>
 
-      <button id="camera-button" class="call-ctl" type="button" title="Toggle Camera">
+      <button id="camera-button" class="call-ctl glass-ctl" type="button" title="Toggle Camera">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
           <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
         </svg>
       </button>
 
-      <button id="flip-camera-button" class="call-ctl" type="button" title="Flip Camera">
+      <button id="flip-camera-button" class="call-ctl glass-ctl" type="button" title="Flip Camera (Front/Back)">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
           <path d="M9 12c0 1.66 1.34 3 3 3s3-1.34 3-3-1.34-3-3-3-3 1.34-3 3zm11-4V5h-3l-1.83-2H8.83L7 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8h-2zm-8 10c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/>
         </svg>
       </button>
 
+      <!-- In-Call Chat Toggle Button -->
+      <button id="call-chat-toggle-btn" class="call-ctl glass-ctl" type="button" title="Open Chat in Call">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/>
+        </svg>
+        <span id="call-chat-badge" class="call-chat-unread-badge hidden">0</span>
+      </button>
+
+      <!-- Leave Call Button -->
       <button id="leave-call" class="call-ctl call-leave-btn" type="button" title="Leave Call">
         <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" style="transform: rotate(135deg)">
           <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
@@ -254,8 +394,10 @@
     </div>
   </div>
 
-  <!-- VIEW-ONCE PHOTO MODAL -->
-  <div id="view-once-modal" class="view-once-modal hidden">
+  <!-- =========================================================
+       VIEW-ONCE PHOTO MODAL
+  ========================================================= -->
+  <div id="view-once-modal" class="view-once-modal glass-overlay hidden">
     <div class="view-once-header">
       <div class="view-once-badge-group">
         <span class="badge-icon">①</span>
@@ -263,8 +405,8 @@
         <span class="badge-subtitle">• Closes & deletes forever upon exit</span>
       </div>
       <div class="view-once-header-right">
-        <span id="view-once-timer" class="view-once-timer">15s</span>
-        <button type="button" id="close-view-once-btn" class="close-modal-btn">✕</button>
+        <span id="view-once-timer" class="view-once-timer glass-pill">15s</span>
+        <button type="button" id="close-view-once-btn" class="close-modal-btn glass-btn">✕</button>
       </div>
     </div>
 
@@ -272,7 +414,7 @@
       <div class="view-once-img-wrap">
         <img id="view-once-image" src="" alt="View Once Photo" oncontextmenu="return false;" draggable="false" />
       </div>
-      <div id="view-once-caption" class="view-once-caption hidden"></div>
+      <div id="view-once-caption" class="view-once-caption glass-card hidden"></div>
     </div>
 
     <div class="view-once-footer">
@@ -280,43 +422,107 @@
     </div>
   </div>
 
-  <!-- SHARE ROOM MODAL -->
-  <div id="share-modal" class="modal-overlay hidden">
-    <div class="modal-card">
+  <!-- =========================================================
+       SHARE ROOM MODAL
+  ========================================================= -->
+  <div id="share-modal" class="modal-overlay glass-overlay hidden">
+    <div class="modal-card glass-modal-card">
       <div class="modal-header">
         <div class="modal-title-group">
-          <div class="modal-icon">🔗</div>
+          <div class="modal-icon-sparkle">🔗</div>
           <h3>Share Room Invite</h3>
         </div>
         <button type="button" id="close-share-modal" class="modal-close-btn">✕</button>
       </div>
 
       <p class="modal-desc">
-        Send this link to a friend. When they open it, they will <strong>automatically join this room</strong> with a random username!
+        Send this invite link. The recipient can directly write their custom username or generate a random one to join immediately!
       </p>
 
-      <div class="room-code-highlight">
+      <div class="room-code-highlight glass-card">
         <span class="code-label">ROOM CODE</span>
         <strong id="share-room-code-display">BLUE123</strong>
       </div>
 
-      <div class="share-input-group">
-        <input type="text" id="share-link-input" readonly spellcheck="false" />
-        <button type="button" id="copy-share-link-btn" class="primary-btn-sm">Copy Link</button>
+      <div class="share-options-group">
+        <label class="share-opt-label">Room Invite Link:</label>
+        <div class="share-input-group">
+          <input type="text" id="share-link-input" readonly spellcheck="false" />
+          <button type="button" id="copy-share-link-btn" class="primary-btn-sm">Copy Link</button>
+        </div>
       </div>
 
       <div class="quick-share-buttons">
         <button type="button" id="share-whatsapp-btn" class="share-app-btn whatsapp">💬 WhatsApp</button>
         <button type="button" id="share-telegram-btn" class="share-app-btn telegram">✈️ Telegram</button>
-        <button type="button" id="share-native-btn" class="share-app-btn native">↗️ Options</button>
+        <button type="button" id="share-native-btn" class="share-app-btn native">↗️ Share</button>
       </div>
     </div>
   </div>
 
+  <!-- =========================================================
+       USER MANUAL & PAMPHLET MODAL (In-App Guide)
+  ========================================================= -->
+  <div id="guide-modal" class="modal-overlay glass-overlay hidden">
+    <div class="modal-card glass-modal-card guide-modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon-sparkle">📖</div>
+          <h3>TempChat User Manual</h3>
+        </div>
+        <button type="button" id="close-guide-modal" class="modal-close-btn">✕</button>
+      </div>
+
+      <div class="guide-modal-body">
+        <div class="guide-hero-banner glass-card">
+          <div class="guide-badge">✦ ZERO STORAGE • 100% PRIVATE</div>
+          <h4>Ephemeral Calls, Media & Messaging</h4>
+          <p>No phone numbers, no signups, and zero database logs. Everything is stored strictly in memory and vanishes when closed.</p>
+          <a href="/manual" target="_blank" class="full-manual-link">Open Full Pamphlet Page ↗</a>
+        </div>
+
+        <div class="guide-sections">
+          <div class="guide-section-item">
+            <h5>📹 Multi-Peer Video & Audio Calls</h5>
+            <p>Direct frame & Web Audio PCM stream relay works across all mobile carriers (4G/5G) without NAT drops. Flip between front and rear camera seamlessly.</p>
+          </div>
+
+          <div class="guide-section-item">
+            <h5>① View-Once Self-Destructing Photos</h5>
+            <p>Use <strong>📷 Snap</strong> to take direct camera photos or <strong>🖼️ Gallery</strong> to pick photos. View-once images self-destruct after 15 seconds and are purged forever.</p>
+          </div>
+
+          <div class="guide-section-item">
+            <h5>🎙️ Ephemeral Voice Notes</h5>
+            <p>Hold or tap the mic button to record 1–60 second voice notes with an interactive waveform progress scrubber.</p>
+          </div>
+
+          <div class="guide-section-item">
+            <h5>🔗 Instant Room Invites</h5>
+            <p>Share <code>?room=ROOMCODE</code> links. When friends click, they only need to pick a username to join instantly!</p>
+          </div>
+
+          <div class="guide-section-item">
+            <h5>🔴 Reset Room Wipe</h5>
+            <p>Click the red <strong>Reset</strong> button anytime to instantly wipe the entire room chat history for everyone.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="guide-modal-footer">
+        <button type="button" id="guide-modal-close-action" class="primary-gold-btn">
+          <span>Got it, Let's Chat!</span>
+          <span>➔</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GLOBAL FLOATING TOAST NOTIFICATION POPUPS -->
   <div id="toast-container" class="toast-container"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a32d64a0e8a0d97b',t:'MTc4ODAyNTc3NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
 

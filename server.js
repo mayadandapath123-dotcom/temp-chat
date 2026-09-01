@@ -15,7 +15,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Socket.IO Server Configuration with WebSocket & Polling Fallbacks
+// Socket.IO Server Configuration
 const io = new Server(server, {
   maxHttpBufferSize: 25 * 1024 * 1024,
   cors: {
@@ -47,7 +47,7 @@ app.use((req, res) => {
 */
 
 const PRESENCE_TIMEOUT = 12000;
-const calls = new Map();
+const calls = new Map(); // room -> Map(socketId -> { username, callType, videoEnabled, audioEnabled })
 
 async function broadcastPresence(room) {
   if (!room) return;
@@ -60,6 +60,23 @@ async function broadcastPresence(room) {
     }));
 
   io.to(room).emit("presence-update", people);
+}
+
+function broadcastCallStatus(room) {
+  if (!room) return;
+  const roomCall = calls.get(room);
+  if (!roomCall || roomCall.size === 0) {
+    io.to(room).emit("room-call-status", { active: false, count: 0, participants: [] });
+  } else {
+    const participants = [...roomCall.values()].map((p) => p.username);
+    const sampleCallType = [...roomCall.values()][0]?.callType || "video";
+    io.to(room).emit("room-call-status", {
+      active: true,
+      count: roomCall.size,
+      callType: sampleCallType,
+      participants,
+    });
+  }
 }
 
 function startPresenceTimeout(socket) {
@@ -84,9 +101,8 @@ function removeFromCall(socket) {
   if (roomCall.size === 0) {
     calls.delete(socket.room);
     io.to(socket.room).emit("call-ended");
-  } else if (roomCall.size === 1) {
-    // Keep 1 person in call in case peer reconnects, but notify
   }
+  broadcastCallStatus(socket.room);
 }
 
 io.on("connection", (socket) => {
@@ -106,6 +122,7 @@ io.on("connection", (socket) => {
         text: `${socket.username} left the room.`,
       });
       broadcastPresence(oldRoom);
+      broadcastCallStatus(oldRoom);
     }
 
     socket.join(room);
@@ -118,7 +135,19 @@ io.on("connection", (socket) => {
     });
 
     broadcastPresence(room);
+    broadcastCallStatus(room);
     startPresenceTimeout(socket);
+  });
+
+  // Typing Indicators
+  socket.on("typing", () => {
+    if (!socket.room || !socket.username) return;
+    socket.to(socket.room).emit("user-typing", { username: socket.username });
+  });
+
+  socket.on("stop-typing", () => {
+    if (!socket.room || !socket.username) return;
+    socket.to(socket.room).emit("user-stop-typing", { username: socket.username });
   });
 
   // Text Message
@@ -170,11 +199,11 @@ io.on("connection", (socket) => {
     });
   });
 
-  /* =========================================
-     WEBRTC CALL SIGNALING PIPELINE
-  ========================================= */
+  /* =========================================================
+     LIVE CALL SIGNALING & STREAM RELAY
+  ========================================================= */
 
-  // 1. Caller starts the call -> Alert others in the room
+  // 1. Caller starts call -> Creates or expands room call
   socket.on("call-start", (data = {}) => {
     if (!socket.room || !socket.username) return;
     const callType = data.callType === "audio" ? "audio" : "video";
@@ -190,18 +219,19 @@ io.on("connection", (socket) => {
       username: socket.username,
       callType,
       videoEnabled: data.videoEnabled !== false && callType === "video",
-      audioEnabled: true
+      audioEnabled: true,
     });
 
-    // Notify other members in the room that a call was initiated
     socket.to(socket.room).emit("call-start", {
       by: socket.username,
       id: socket.id,
       callType,
     });
+
+    broadcastCallStatus(socket.room);
   });
 
-  // 2. Peer accepts and joins the call with their media tracks ready
+  // 2. Peer accepts and joins call
   socket.on("call-join", (data = {}) => {
     if (!socket.room || !socket.username) return;
     const callType = data.callType === "audio" ? "audio" : "video";
@@ -217,7 +247,7 @@ io.on("connection", (socket) => {
       username: socket.username,
       callType,
       videoEnabled: data.videoEnabled !== false && callType === "video",
-      audioEnabled: data.audioEnabled !== false
+      audioEnabled: data.audioEnabled !== false,
     });
 
     const existingPeers = [...roomCall.entries()]
@@ -227,37 +257,62 @@ io.on("connection", (socket) => {
         username: info.username,
         callType: info.callType,
         videoEnabled: info.videoEnabled,
-        audioEnabled: info.audioEnabled
+        audioEnabled: info.audioEnabled,
       }));
 
-    // Send existing peers list to the newly joined peer
     io.to(socket.id).emit("call-peers", existingPeers);
 
-    // Notify all existing peers in call about the newly joined peer
     existingPeers.forEach(({ id }) => {
       io.to(id).emit("call-peer-joined", {
         id: socket.id,
         username: socket.username,
         callType,
         videoEnabled: data.videoEnabled !== false && callType === "video",
-        audioEnabled: data.audioEnabled !== false
+        audioEnabled: data.audioEnabled !== false,
       });
     });
+
+    broadcastCallStatus(socket.room);
   });
 
-  // 3. P2P Signal Relay (SDP Offers, Answers, and ICE Candidates)
-  socket.on("call-signal", (data) => {
-    if (!socket.room || !data || !data.to || !data.signal) return;
+  // 3. Live Video Frame Stream Relay
+  socket.on("video-frame", (data) => {
+    if (!socket.room || !data || !data.frame) return;
     const roomCall = calls.get(socket.room);
     if (!roomCall || !roomCall.has(socket.id)) return;
 
-    io.to(data.to).emit("call-signal", {
-      from: socket.id,
-      signal: data.signal,
-    });
+    // BANDWIDTH CRITICAL: relay ONLY to sockets actually in the call.
+    // Using socket.to(room) would also blast every frame at people who are
+    // merely in the chat room -- their client discards it, but the host has
+    // already been billed for the egress.
+    for (const peerId of roomCall.keys()) {
+      if (peerId === socket.id) continue;
+      io.to(peerId).emit("video-frame", {
+        from: socket.id,
+        frame: data.frame,
+      });
+    }
   });
 
-  // 4. Peer Media State Updates (Camera on/off, Mute/unmute)
+  // 4. Live PCM Audio Stream Relay
+  socket.on("audio-pcm", (data) => {
+    if (!socket.room || !data || !data.pcm) return;
+    const roomCall = calls.get(socket.room);
+    if (!roomCall || !roomCall.has(socket.id)) return;
+
+    // BANDWIDTH CRITICAL: relay ONLY to sockets actually in the call
+    // (see the note on video-frame above).
+    for (const peerId of roomCall.keys()) {
+      if (peerId === socket.id) continue;
+      io.to(peerId).emit("audio-pcm", {
+        from: socket.id,
+        pcm: data.pcm,
+        sampleRate: data.sampleRate,
+      });
+    }
+  });
+
+  // 5. Camera / Mic State Update
   socket.on("call-media-state", (data) => {
     if (!socket.room || !data) return;
     const roomCall = calls.get(socket.room);
@@ -274,7 +329,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  // 5. Leave Call
+  // 6. Leave Call
   socket.on("call-leave", () => {
     removeFromCall(socket);
   });
@@ -311,7 +366,10 @@ io.on("connection", (socket) => {
       socket.to(room).emit("system-message", {
         text: `${socket.username} disconnected.`,
       });
-      setTimeout(() => broadcastPresence(room), 50);
+      setTimeout(() => {
+        broadcastPresence(room);
+        broadcastCallStatus(room);
+      }, 50);
     }
     console.log("Socket disconnected:", socket.id);
   });
