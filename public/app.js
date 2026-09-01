@@ -2118,3 +2118,785 @@ socket.on("disconnect", () => {
 });
 
 
+/* =====================================================================
+   ============  TEMPCHAT v3 UPGRADE BLOCK  ============================
+   =====================================================================
+   Paste at the very bottom of public/app.js.
+
+   Safe to paste even if you already pasted the older v2 block -- this one
+   detects and replaces anything v2 created, and always wins because it
+   runs last.
+
+   Adds / fixes:
+     * "..." menu now visible on DESKTOP too (v2 hid it -- that is why you
+       could not find Auto Mute)
+     * Clear AUTO-MUTED badge + live mic status chip during calls
+     * Speaking glow on whoever is talking  (costs ZERO extra bandwidth)
+     * Maximize / pin any person's tile or shared screen
+     * User manual rewritten to cover every feature
+     * Video paused while the tab is hidden (saves bandwidth)
+   ===================================================================== */
+
+(function tempchatV3() {
+  "use strict";
+
+  // Remove anything the older v2 block injected, so pasting both is safe.
+  ["more-button", "more-sheet", "screen-share-button", "camera-modal", "mic-status-chip"]
+    .forEach((id) => { const el = document.getElementById(id); if (el) el.remove(); });
+
+  /* ---------------------------------------------------------------
+     0. VIDEO PROFILES
+  --------------------------------------------------------------- */
+  const SCREEN_SHARE_MAX_DIM = 900;
+  const SCREEN_SHARE_QUALITY = 0.55;
+  window.__activeVideoMaxDim = VIDEO_MAX_DIM;
+  window.__activeVideoQuality = VIDEO_JPEG_QUALITY;
+
+  /* ---------------------------------------------------------------
+     1. MOBILE NOTIFICATIONS (service worker)
+        `new Notification(...)` throws "Illegal constructor" on Android.
+        Phones only allow notifications via a service worker.
+  --------------------------------------------------------------- */
+  let swRegistration = null;
+  (async function registerSW() {
+    if (!("serviceWorker" in navigator)) return;
+    try {
+      swRegistration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+      await navigator.serviceWorker.ready;
+    } catch (e) { console.warn("SW registration failed:", e); }
+  })();
+
+  async function askNotificationPermission() {
+    if (!("Notification" in window)) return "unsupported";
+    try {
+      if (Notification.permission === "default") return await Notification.requestPermission();
+      return Notification.permission;
+    } catch (e) { return "denied"; }
+  }
+
+  async function showSystemNotification(title, body, opts) {
+    opts = opts || {};
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    try {
+      const reg = swRegistration || (navigator.serviceWorker ? await navigator.serviceWorker.ready : null);
+      if (reg && reg.showNotification) {
+        await reg.showNotification(title, {
+          body: body || "",
+          tag: opts.tag || "tempchat-msg",
+          renotify: true,
+          vibrate: opts.vibrate || [180, 80, 180],
+        });
+        return;
+      }
+    } catch (e) {}
+    try { new Notification(title, { body: body, tag: opts.tag || "tempchat-msg" }); } catch (e) {}
+  }
+
+  notifyUser = function (title, body, opts) {
+    opts = opts || {};
+    try { playSfx("receive"); } catch (e) {}
+    if (document.visibilityState !== "visible") {
+      try { unreadCount++; startTitleFlashing(); } catch (e) {}
+      showSystemNotification(title, body, opts);
+      if (navigator.vibrate) { try { navigator.vibrate(opts.vibrate || [180, 80, 180]); } catch (e) {} }
+    }
+  };
+
+  /* ---------------------------------------------------------------
+     2. SETTINGS
+  --------------------------------------------------------------- */
+  function readSetting(k, d) {
+    try { const v = localStorage.getItem(k); return v === null ? d : v === "true"; } catch (e) { return d; }
+  }
+  function persistSetting(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) {} }
+
+  let autoMuteEnabled = readSetting("tempchat_auto_mute", false);
+  let autoListenEnabled = readSetting("tempchat_auto_listen", false);
+
+  /* ---------------------------------------------------------------
+     3. SPEAKING DETECTION  --  COSTS ZERO EXTRA BANDWIDTH
+        The VAD already means audio-pcm is ONLY sent while somebody is
+        actually talking. So "a packet arrived from peer X" already means
+        "X is talking". We need no new events and no extra bytes at all.
+  --------------------------------------------------------------- */
+  const SPEAKING_HOLD_MS = 450; // clear the glow this long after the last packet
+  const speakingTimers = new Map();
+
+  function tileFor(peerId) {
+    if (typeof videoGrid === "undefined" || !videoGrid) return null;
+    return videoGrid.querySelector('[data-peer-id="' + (window.CSS && CSS.escape ? CSS.escape(peerId) : peerId) + '"]');
+  }
+
+  function markSpeaking(peerId) {
+    const tile = tileFor(peerId);
+    if (tile) tile.classList.add("speaking");
+    updateSpeakerNameBadge(peerId, true);
+
+    clearTimeout(speakingTimers.get(peerId));
+    speakingTimers.set(peerId, setTimeout(() => {
+      const t = tileFor(peerId);
+      if (t) t.classList.remove("speaking");
+      updateSpeakerNameBadge(peerId, false);
+      speakingTimers.delete(peerId);
+    }, SPEAKING_HOLD_MS));
+  }
+
+  function updateSpeakerNameBadge(peerId, on) {
+    const tile = tileFor(peerId);
+    if (!tile) return;
+    let wave = tile.querySelector(".speaking-wave");
+    if (on && !wave) {
+      wave = document.createElement("div");
+      wave.className = "speaking-wave";
+      wave.innerHTML = "<i></i><i></i><i></i><i></i>";
+      tile.appendChild(wave);
+    } else if (!on && wave) {
+      wave.remove();
+    }
+  }
+
+  // Remote peers: piggyback on the audio packets that already arrive.
+  socket.on("audio-pcm", (data) => {
+    if (!inCall || !data || !data.from) return;
+    markSpeaking(data.from);
+  });
+
+  socket.on("call-peer-left", (d) => {
+    if (d && d.id) { clearTimeout(speakingTimers.get(d.id)); speakingTimers.delete(d.id); }
+  });
+
+  /* ---------------------------------------------------------------
+     4. AUTO MUTE
+        SOFT mute -- never sets track.enabled = false. Disabling the
+        track would feed the detector silence, so it could never hear
+        you speak again and would latch muted forever.
+  --------------------------------------------------------------- */
+  const AUTO_MUTE_SILENCE_BLOCKS = 28; // ~1.2s quiet before muting
+  let autoMuteSilenceCount = 0;
+  let isAutoMuted = false;
+
+  function setMicMuted(muted, hard, announce) {
+    isMicMuted = muted;
+    isAutoMuted = muted && !hard;
+
+    if (localStream) {
+      const track = localStream.getAudioTracks()[0];
+      if (track) track.enabled = hard ? !muted : true;
+    }
+
+    const mb = document.getElementById("mute-button");
+    if (mb) {
+      mb.classList.toggle("off", muted);
+      mb.classList.toggle("auto-muted", isAutoMuted);
+      let badge = mb.querySelector(".auto-badge");
+      if (isAutoMuted && !badge) {
+        badge = document.createElement("span");
+        badge.className = "auto-badge";
+        badge.textContent = "AUTO";
+        mb.appendChild(badge);
+      } else if (!isAutoMuted && badge) {
+        badge.remove();
+      }
+    }
+
+    const selfTile = tileFor("me");
+    if (selfTile) {
+      const icon = selfTile.querySelector(".video-tag-icon");
+      if (icon) {
+        icon.className = "video-tag-icon " + (muted ? "muted" : "");
+        icon.textContent = muted ? "🔇" : "🎙️";
+      }
+      selfTile.classList.toggle("is-auto-muted", isAutoMuted);
+    }
+
+    if (inCall) socket.emit("call-media-state", { audio: !muted, video: !isCameraOff });
+    if (announce) showToast(muted ? "Microphone muted" : "Microphone active");
+    updateMicChip();
+  }
+
+  function updateAutoMute(isSpeaking) {
+    if (!inCall || !autoMuteEnabled) return;
+    if (isSpeaking) {
+      autoMuteSilenceCount = 0;
+      if (isMicMuted) setMicMuted(false, false, false);
+    } else {
+      autoMuteSilenceCount++;
+      if (!isMicMuted && autoMuteSilenceCount >= AUTO_MUTE_SILENCE_BLOCKS) setMicMuted(true, false, false);
+    }
+  }
+
+  /* ---------------------------------------------------------------
+     5. LIVE MIC STATUS CHIP
+        You said you could not tell what state the mic was in. This chip
+        sits above the call controls and always says exactly what is
+        happening.
+  --------------------------------------------------------------- */
+  function ensureMicChip() {
+    let chip = document.getElementById("mic-status-chip");
+    if (chip) return chip;
+    chip = document.createElement("div");
+    chip.id = "mic-status-chip";
+    chip.className = "mic-status-chip hidden";
+    const dock = document.querySelector(".call-controls");
+    if (dock && dock.parentNode) dock.parentNode.insertBefore(chip, dock);
+    else document.body.appendChild(chip);
+    return chip;
+  }
+
+  function updateMicChip() {
+    const chip = ensureMicChip();
+    if (!inCall) { chip.classList.add("hidden"); return; }
+    chip.classList.remove("hidden");
+    chip.classList.remove("state-live", "state-auto", "state-hard");
+
+    if (isMicMuted && isAutoMuted) {
+      chip.classList.add("state-auto");
+      chip.innerHTML = '<span class="chip-dot"></span>🔇 Auto-muted — start talking to unmute';
+    } else if (isMicMuted) {
+      chip.classList.add("state-hard");
+      chip.innerHTML = '<span class="chip-dot"></span>🔇 Muted — tap the mic to unmute';
+    } else if (autoMuteEnabled) {
+      chip.classList.add("state-live");
+      chip.innerHTML = '<span class="chip-dot"></span>🎙️ Live · Auto Mute on';
+    } else {
+      chip.classList.add("state-live");
+      chip.innerHTML = '<span class="chip-dot"></span>🎙️ Mic live';
+    }
+  }
+
+  /* ---------------------------------------------------------------
+     6. STREAMING PIPES (redefined)
+        + auto-mute hook, + self speaking glow,
+        + video paused while the tab is hidden (bandwidth saving)
+  --------------------------------------------------------------- */
+  startLiveStreamingPipes = function () {
+    stopLiveStreamingPipes();
+
+    if (!offscreenCanvas) {
+      offscreenCanvas = document.createElement("canvas");
+      offscreenCtx = offscreenCanvas.getContext("2d", { alpha: false });
+    }
+
+    videoFrameSenderInterval = setInterval(() => {
+      if (!inCall || isCameraOff || !localVideoElement || localVideoElement.paused || localVideoElement.ended) return;
+      if (remotePeers.size === 0) return;              // nobody to send to
+      if (document.hidden && !window.__isScreenSharing) return; // tab hidden: stop burning data
+
+      const vw = localVideoElement.videoWidth, vh = localVideoElement.videoHeight;
+      if (vw > 0 && vh > 0) {
+        try {
+          const maxDim = window.__activeVideoMaxDim;
+          let tw = vw, th = vh;
+          if (vw > vh) { tw = maxDim; th = Math.round((vh * maxDim) / vw); }
+          else { th = maxDim; tw = Math.round((vw * maxDim) / vh); }
+
+          if (offscreenCanvas.width !== tw || offscreenCanvas.height !== th) {
+            offscreenCanvas.width = tw; offscreenCanvas.height = th;
+          }
+          offscreenCtx.drawImage(localVideoElement, 0, 0, tw, th);
+          const frameData = offscreenCanvas.toDataURL("image/jpeg", window.__activeVideoQuality);
+
+          if (frameData.length === lastSentFrameLength) {
+            staticFrameSkips++;
+            if (staticFrameSkips < Math.round(2000 / VIDEO_FRAME_INTERVAL_MS)) return;
+          }
+          staticFrameSkips = 0;
+          lastSentFrameLength = frameData.length;
+          socket.emit("video-frame", { frame: frameData });
+        } catch (e) {}
+      }
+    }, VIDEO_FRAME_INTERVAL_MS);
+
+    if (localStream && localStream.getAudioTracks().length > 0) {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          audioContextSender = new AudioCtx();
+          if (audioContextSender.state === "suspended") audioContextSender.resume().catch(() => {});
+          audioSourceNode = audioContextSender.createMediaStreamSource(localStream);
+
+          const VAD_THRESHOLD = 0.002;
+          let vadHangover = 0;
+          const HANGOVER_MAX = 14;
+
+          audioProcessorNode = audioContextSender.createScriptProcessor(2048, 1, 1);
+          audioProcessorNode.onaudioprocess = (e) => {
+            if (!inCall) return;
+            const ch = e.inputBuffer.getChannelData(0);
+            let sum = 0;
+            for (let i = 0; i < ch.length; i++) sum += ch[i] * ch[i];
+            const rms = Math.sqrt(sum / ch.length);
+            const voiced = rms > VAD_THRESHOLD;
+
+            // Runs even while muted so it can un-mute you when you speak.
+            if (autoMuteEnabled) updateAutoMute(voiced);
+
+            // Your own glow -- local only, no bytes.
+            if (voiced && !isMicMuted) markSpeaking("me");
+
+            if (isMicMuted) return;
+            if (remotePeers.size === 0) return;
+
+            if (voiced) vadHangover = HANGOVER_MAX;
+            else if (vadHangover > 0) vadHangover--;
+            else return; // silence: transmit nothing
+
+            const inputRate = audioContextSender.sampleRate || 48000;
+            const factor = Math.max(1, Math.round(inputRate / 16000));
+            const len = Math.floor(ch.length / factor);
+            const pcm16 = new Int16Array(len);
+            let o = 0;
+            for (let i = 0; i < ch.length && o < len; i += factor) {
+              const s = Math.max(-1, Math.min(1, ch[i]));
+              pcm16[o++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            }
+            socket.emit("audio-pcm", { pcm: pcm16.buffer, sampleRate: Math.round(inputRate / factor) });
+          };
+
+          audioSourceNode.connect(audioProcessorNode);
+          audioSilentGain = audioContextSender.createGain();
+          audioSilentGain.gain.value = 0;
+          audioProcessorNode.connect(audioSilentGain);
+          audioSilentGain.connect(audioContextSender.destination);
+        }
+      } catch (e) { console.warn("PCM voice sender error:", e); }
+    }
+
+    setTimeout(updateMicChip, 300);
+  };
+
+  /* ---------------------------------------------------------------
+     7. MUTE BUTTON rewire
+  --------------------------------------------------------------- */
+  (function rewireMute() {
+    const old = document.getElementById("mute-button");
+    if (!old) return;
+    const fresh = old.cloneNode(true);
+    old.parentNode.replaceChild(fresh, old);
+    try { muteButton = fresh; } catch (e) {}
+    fresh.addEventListener("click", () => {
+      if (!localStream) return;
+      if (autoMuteEnabled) {
+        autoMuteEnabled = false;
+        persistSetting("tempchat_auto_mute", false);
+        const t = document.getElementById("auto-mute-toggle");
+        if (t) t.checked = false;
+        showToast("Auto Mute turned off (manual control)");
+      }
+      setMicMuted(!isMicMuted, true, true);
+    });
+  })();
+
+  /* ---------------------------------------------------------------
+     8. AUTO LISTEN
+  --------------------------------------------------------------- */
+  socket.on("call-start", () => {
+    if (!autoListenEnabled || inCall) return;
+    showToast("Auto-answering call…");
+    setTimeout(() => {
+      const btn = document.getElementById("accept-call");
+      if (!inCall && btn) btn.click();
+    }, 700);
+  });
+
+  /* ---------------------------------------------------------------
+     9. MAXIMIZE / PIN A TILE
+        Pure client-side. Costs no extra bandwidth -- it only changes
+        how the frames you are ALREADY receiving get laid out.
+  --------------------------------------------------------------- */
+  function unpinAll() {
+    if (!videoGrid) return;
+    videoGrid.classList.remove("has-pinned");
+    videoGrid.querySelectorAll(".video-tile.pinned").forEach((t) => t.classList.remove("pinned"));
+    videoGrid.querySelectorAll(".tile-max-btn").forEach((b) => (b.textContent = "⛶"));
+  }
+
+  function togglePin(tile) {
+    if (!videoGrid || !tile) return;
+    const already = tile.classList.contains("pinned");
+    unpinAll();
+    if (!already) {
+      tile.classList.add("pinned");
+      videoGrid.classList.add("has-pinned");
+      const b = tile.querySelector(".tile-max-btn");
+      if (b) b.textContent = "✕";
+      showToast("Maximized — tap ✕ or press Esc to go back");
+    }
+  }
+
+  function decorateTile(tile) {
+    if (!tile || tile.querySelector(".tile-max-btn")) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tile-max-btn";
+    btn.title = "Maximize this person";
+    btn.textContent = "⛶";
+    btn.addEventListener("click", (e) => { e.stopPropagation(); togglePin(tile); });
+    tile.appendChild(btn);
+    tile.addEventListener("dblclick", () => togglePin(tile));
+  }
+
+  if (typeof videoGrid !== "undefined" && videoGrid) {
+    // Tiles are created dynamically, so watch for new ones.
+    new MutationObserver((muts) => {
+      muts.forEach((m) => m.addedNodes.forEach((n) => {
+        if (n.nodeType === 1 && n.classList && n.classList.contains("video-tile")) decorateTile(n);
+      }));
+    }).observe(videoGrid, { childList: true });
+    videoGrid.querySelectorAll(".video-tile").forEach(decorateTile);
+  }
+
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") unpinAll(); });
+
+  /* ---------------------------------------------------------------
+     10. SCREEN SHARE
+  --------------------------------------------------------------- */
+  let screenStream = null, cameraStreamBackup = null, screenShareButton = null;
+  window.__isScreenSharing = false;
+
+  async function startScreenShare() {
+    if (!inCall) return showToast("Join a call first.");
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== "function") {
+      return showToast("Screen sharing isn't supported on phones. Use a laptop.");
+    }
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 8, max: 12 } }, audio: false,
+      });
+    } catch (err) {
+      if (err && err.name === "NotAllowedError") return;
+      return showToast("Could not start screen sharing.");
+    }
+
+    cameraStreamBackup = localStream;
+    window.__isScreenSharing = true;
+    isCameraOff = false;
+
+    if (localVideoElement) {
+      localVideoElement.srcObject = screenStream;
+      try { await localVideoElement.play(); } catch (e) {}
+    }
+    window.__activeVideoMaxDim = SCREEN_SHARE_MAX_DIM;
+    window.__activeVideoQuality = SCREEN_SHARE_QUALITY;
+
+    if (screenShareButton) screenShareButton.classList.add("active");
+    socket.emit("call-media-state", { video: true, audio: !isMicMuted });
+    showToast("Screen sharing started.");
+
+    const track = screenStream.getVideoTracks()[0];
+    if (track) track.addEventListener("ended", stopScreenShare);
+  }
+
+  function stopScreenShare() {
+    if (!window.__isScreenSharing) return;
+    window.__isScreenSharing = false;
+    if (screenStream) { screenStream.getTracks().forEach((t) => t.stop()); screenStream = null; }
+
+    window.__activeVideoMaxDim = VIDEO_MAX_DIM;
+    window.__activeVideoQuality = VIDEO_JPEG_QUALITY;
+
+    localStream = cameraStreamBackup || localStream;
+    cameraStreamBackup = null;
+    const hasCam = localStream && localStream.getVideoTracks().length > 0;
+    if (localVideoElement && localStream) {
+      localVideoElement.srcObject = localStream;
+      try { localVideoElement.play(); } catch (e) {}
+    }
+    isCameraOff = !hasCam;
+    if (screenShareButton) screenShareButton.classList.remove("active");
+    socket.emit("call-media-state", { video: !isCameraOff, audio: !isMicMuted });
+    showToast("Screen sharing stopped.");
+  }
+
+  (function addShareBtn() {
+    const dock = document.querySelector(".call-controls");
+    const leave = document.getElementById("leave-call");
+    if (!dock) return;
+    const btn = document.createElement("button");
+    btn.id = "screen-share-button";
+    btn.type = "button";
+    btn.className = "call-ctl glass-ctl";
+    btn.title = "Share your screen";
+    btn.innerHTML = '<svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor">' +
+      '<path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>' +
+      '<path d="M12 8l-4 4h2.5v3h3v-3H16l-4-4z"/></svg>';
+    if (leave) dock.insertBefore(btn, leave); else dock.appendChild(btn);
+    screenShareButton = btn;
+    btn.addEventListener("click", () => (window.__isScreenSharing ? stopScreenShare() : startScreenShare()));
+  })();
+
+  /* ---------------------------------------------------------------
+     11. IN-APP DIRECT CAMERA
+         <input capture="environment"> is only a HINT -- Android ignores
+         it and opens the file manager. getUserMedia is the real fix.
+  --------------------------------------------------------------- */
+  let snapStream = null, snapFacing = "environment", camEls = null;
+
+  function buildCameraUI() {
+    if (camEls && document.body.contains(camEls.modal)) return camEls;
+    const wrap = document.createElement("div");
+    wrap.id = "camera-modal";
+    wrap.className = "camera-modal hidden";
+    wrap.innerHTML =
+      '<div class="camera-stage">' +
+        '<video id="camera-stream" autoplay playsinline muted webkit-playsinline></video>' +
+        '<canvas id="camera-canvas" style="display:none"></canvas>' +
+        '<div id="camera-error" class="camera-error hidden"></div>' +
+      "</div>" +
+      '<div class="camera-topbar">' +
+        '<button type="button" id="camera-close-btn" class="camera-round-btn">✕</button>' +
+        '<span class="camera-hint">Direct Camera</span>' +
+        '<button type="button" id="camera-flip-btn" class="camera-round-btn">🔄</button>' +
+      "</div>" +
+      '<div class="camera-bottombar">' +
+        '<button type="button" id="camera-gallery-fallback" class="camera-side-btn">🖼️</button>' +
+        '<button type="button" id="camera-shutter-btn" class="camera-shutter"><span></span></button>' +
+        '<span class="camera-side-btn camera-side-spacer"></span>' +
+      "</div>";
+    document.body.appendChild(wrap);
+    camEls = { modal: wrap, video: wrap.querySelector("#camera-stream"),
+               canvas: wrap.querySelector("#camera-canvas"), error: wrap.querySelector("#camera-error") };
+
+    wrap.querySelector("#camera-close-btn").addEventListener("click", closeCamera);
+    wrap.querySelector("#camera-shutter-btn").addEventListener("click", capturePhoto);
+    wrap.querySelector("#camera-flip-btn").addEventListener("click", async () => {
+      snapFacing = snapFacing === "environment" ? "user" : "environment";
+      camEls.video.classList.toggle("mirrored", snapFacing === "user");
+      try { await startSnap(); } catch (e) { showCamError(e); }
+    });
+    wrap.querySelector("#camera-gallery-fallback").addEventListener("click", () => {
+      closeCamera();
+      const g = document.getElementById("gallery-file-input");
+      if (g) g.click();
+    });
+    return camEls;
+  }
+
+  async function startSnap() {
+    stopSnap();
+    snapStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: snapFacing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false,
+    });
+    camEls.video.srcObject = snapStream;
+    try { await camEls.video.play(); } catch (e) {}
+  }
+  function stopSnap() {
+    if (snapStream) { snapStream.getTracks().forEach((t) => t.stop()); snapStream = null; }
+    if (camEls && camEls.video) camEls.video.srcObject = null;
+  }
+  function showCamError(err) {
+    const denied = err && (err.name === "NotAllowedError" || err.name === "SecurityError");
+    camEls.error.textContent = denied
+      ? "Camera permission denied. Allow camera access, or use the gallery button below."
+      : "Camera unavailable on this device. Use the gallery button below.";
+    camEls.error.classList.remove("hidden");
+  }
+  function closeCamera() {
+    stopSnap();
+    if (camEls) camEls.modal.classList.add("hidden");
+    document.body.classList.remove("camera-open");
+  }
+  async function openCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.isSecureContext) {
+      const f = document.getElementById("camera-file-input");
+      if (f) f.click();
+      return;
+    }
+    buildCameraUI();
+    camEls.error.classList.add("hidden");
+    camEls.modal.classList.remove("hidden");
+    document.body.classList.add("camera-open");
+    try { await startSnap(); } catch (err) { showCamError(err); }
+  }
+  function capturePhoto() {
+    if (!camEls || !snapStream) return;
+    const v = camEls.video, vw = v.videoWidth, vh = v.videoHeight;
+    if (!vw || !vh) return;
+    const maxDim = 1280;
+    let tw = vw, th = vh;
+    if (vw > vh && vw > maxDim) { tw = maxDim; th = Math.round((vh * maxDim) / vw); }
+    else if (vh >= vw && vh > maxDim) { th = maxDim; tw = Math.round((vw * maxDim) / vh); }
+    camEls.canvas.width = tw; camEls.canvas.height = th;
+    const ctx = camEls.canvas.getContext("2d", { alpha: false });
+    if (snapFacing === "user") { ctx.translate(tw, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(v, 0, 0, tw, th);
+
+    pendingPhotoDataUrl = camEls.canvas.toDataURL("image/jpeg", 0.72);
+    const prev = document.getElementById("preview-img");
+    const bar = document.getElementById("photo-preview-bar");
+    if (prev) prev.src = pendingPhotoDataUrl;
+    if (bar) bar.classList.remove("hidden");
+    try { playSfx("send"); } catch (e) {}
+    if (navigator.vibrate) { try { navigator.vibrate(35); } catch (e) {} }
+    closeCamera();
+    showToast("Photo captured — add a caption and send.");
+  }
+
+  (function rewireSnap() {
+    const old = document.getElementById("camera-snap-button");
+    if (!old) return;
+    const fresh = old.cloneNode(true);
+    old.parentNode.replaceChild(fresh, old);
+    fresh.addEventListener("click", openCamera);
+  })();
+
+  /* ---------------------------------------------------------------
+     12. "..." MENU  --  now on DESKTOP too
+  --------------------------------------------------------------- */
+  (function buildMoreMenu() {
+    const actions = document.querySelector(".header-actions");
+    if (!actions) return;
+
+    const moreBtn = document.createElement("button");
+    moreBtn.id = "more-button";
+    moreBtn.type = "button";
+    moreBtn.className = "header-icon-btn more-btn";
+    moreBtn.title = "Settings: Auto Mute, Auto Listen, Notifications";
+    moreBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">' +
+      '<circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>' +
+      '<span class="btn-label">Settings</span>';
+    actions.appendChild(moreBtn);
+
+    const sheet = document.createElement("div");
+    sheet.id = "more-sheet";
+    sheet.className = "more-sheet hidden";
+    sheet.innerHTML =
+      '<div class="more-sheet-header"><strong>Options &amp; Settings</strong>' +
+        '<button id="close-more-sheet" type="button" class="panel-close-btn">✕</button></div>' +
+      '<div class="more-sheet-actions">' +
+        '<button type="button" id="sheet-manual-btn" class="more-sheet-item">📖 <span>User Manual</span></button>' +
+        '<button type="button" id="sheet-share-btn" class="more-sheet-item">🔗 <span>Share Invite Link</span></button>' +
+        '<button type="button" id="sheet-people-btn" class="more-sheet-item">👥 <span>Room Members</span></button>' +
+        '<button type="button" id="sheet-notify-btn" class="more-sheet-item">🔔 <span>Enable Notifications</span></button>' +
+        '<button type="button" id="sheet-reset-btn" class="more-sheet-item danger">🗑️ <span>Reset Chat For Everyone</span></button>' +
+      "</div><div class='more-sheet-divider'></div>" +
+      '<div class="more-sheet-toggles">' +
+        '<label class="toggle-row" for="auto-mute-toggle"><span class="toggle-text">' +
+          "<strong>🎙️ Auto Mute</strong><small>Mic mutes itself when you stop talking, unmutes when you speak.</small>" +
+          '</span><input type="checkbox" id="auto-mute-toggle" class="toggle-input" /><span class="toggle-switch"></span></label>' +
+        '<label class="toggle-row" for="auto-listen-toggle"><span class="toggle-text">' +
+          "<strong>📞 Auto Listen</strong><small>Answer incoming calls automatically, no Accept tap needed.</small>" +
+          '</span><input type="checkbox" id="auto-listen-toggle" class="toggle-input" /><span class="toggle-switch"></span></label>' +
+      "</div>";
+    document.body.appendChild(sheet);
+
+    const notifyBtn = sheet.querySelector("#sheet-notify-btn");
+    function refreshNotify() {
+      const span = notifyBtn.querySelector("span");
+      if (!("Notification" in window)) { span.textContent = "Notifications unsupported"; notifyBtn.disabled = true; }
+      else if (Notification.permission === "granted") span.textContent = "Notifications enabled ✓";
+      else if (Notification.permission === "denied") span.textContent = "Notifications blocked — fix in browser settings";
+      else span.textContent = "Enable Notifications";
+    }
+    refreshNotify();
+
+    const open = () => { sheet.classList.remove("hidden"); refreshNotify(); };
+    const close = () => sheet.classList.add("hidden");
+
+    moreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      sheet.classList.contains("hidden") ? open() : close();
+    });
+    sheet.querySelector("#close-more-sheet").addEventListener("click", close);
+    document.addEventListener("click", (e) => {
+      if (sheet.classList.contains("hidden")) return;
+      if (sheet.contains(e.target) || moreBtn.contains(e.target)) return;
+      close();
+    });
+
+    const clk = (id) => { const el = document.getElementById(id); if (el) el.click(); };
+    sheet.querySelector("#sheet-manual-btn").addEventListener("click", () => { close(); clk("guide-button"); });
+    sheet.querySelector("#sheet-share-btn").addEventListener("click", () => { close(); clk("share-button"); });
+    sheet.querySelector("#sheet-people-btn").addEventListener("click", () => { close(); clk("people-button"); });
+    sheet.querySelector("#sheet-reset-btn").addEventListener("click", () => { close(); clk("reset-button"); });
+
+    notifyBtn.addEventListener("click", async () => {
+      const res = await askNotificationPermission();
+      refreshNotify();
+      if (res === "granted") {
+        showToast("Notifications enabled");
+        showSystemNotification("TempChat", "Notifications are working on this device ✓", { tag: "tempchat-test" });
+      } else if (res === "denied") {
+        showToast("Blocked. Enable notifications for this site in browser settings.");
+      }
+    });
+
+    const amt = sheet.querySelector("#auto-mute-toggle");
+    const alt = sheet.querySelector("#auto-listen-toggle");
+    amt.checked = autoMuteEnabled;
+    alt.checked = autoListenEnabled;
+
+    amt.addEventListener("change", () => {
+      autoMuteEnabled = amt.checked;
+      persistSetting("tempchat_auto_mute", autoMuteEnabled);
+      autoMuteSilenceCount = 0;
+      if (!autoMuteEnabled && isMicMuted) setMicMuted(false, true, false);
+      updateMicChip();
+      showToast(autoMuteEnabled ? "Auto Mute ON — mic follows your voice" : "Auto Mute OFF");
+    });
+    alt.addEventListener("change", () => {
+      autoListenEnabled = alt.checked;
+      persistSetting("tempchat_auto_listen", autoListenEnabled);
+      showToast(autoListenEnabled ? "Auto Listen ON — calls answer automatically" : "Auto Listen OFF");
+    });
+  })();
+
+  /* ---------------------------------------------------------------
+     13. USER MANUAL -- rewritten to cover everything
+  --------------------------------------------------------------- */
+  (function updateManual() {
+    const body = document.querySelector(".guide-modal-body");
+    const sections = document.querySelector(".guide-sections");
+    if (!sections) return;
+
+    sections.innerHTML =
+      section("🎙️", "Auto Mute", "Turn it on in <strong>⋯ Settings</strong>. Your mic mutes itself about a second after you stop talking and un-mutes the moment you speak again. While auto-muted the mic button turns <strong>amber with an AUTO badge</strong>, and the chip above the call controls says exactly what your mic is doing. Tapping the mic button yourself switches Auto Mute off.") +
+      section("📞", "Auto Listen", "In <strong>⋯ Settings</strong>. Incoming calls answer themselves — no Accept tap. It answers voice-only on purpose, so your camera never switches on without you knowing.") +
+      section("🟢", "Who's Talking", "Whoever is speaking gets a <strong>green glowing ring</strong> and animated bars on their tile. This costs no extra data at all — TempChat already only sends audio while somebody is actually talking, so the glow rides along with the sound.") +
+      section("⛶", "Maximize Someone", "Tap the <strong>⛶</strong> button on any tile (or double-tap the tile) to blow that person up to full screen — handy for reading a shared screen. Tap <strong>✕</strong> or press <strong>Esc</strong> to go back. This is layout-only and uses no extra data.") +
+      section("🖥️", "Screen Sharing", "In a call, tap the monitor button. Works on <strong>laptops and desktops only</strong> — phone browsers are not allowed to capture the screen. Shared screens are sent sharper than webcam video, but a still screen sends almost nothing.") +
+      section("📷", "Direct Camera", "The <strong>📷</strong> button opens a real in-app camera with a live preview, shutter and front/back flip — it no longer opens your file manager. Use <strong>🖼️</strong> to pick an existing photo instead.") +
+      section("①", "View-Once Photos", "Photos marked view-once self-destruct after being opened and are wiped from memory. The sender is told the moment you open one.") +
+      section("🎙️", "Voice Notes", "Hold or tap the mic in the composer to record up to 60 seconds, with a scrubbable waveform.") +
+      section("🔔", "Notifications", "Open <strong>⋯ → Enable Notifications</strong> and allow it. Needed once per device. On phones this requires the tap — browsers refuse to ask on their own.") +
+      section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +
+      section("🔴", "Reset Room", "Wipes the whole room's chat for everyone, instantly.") +
+      section("🔒", "Privacy &amp; Data", "No accounts, no database, nothing written to disk. Messages, photos, voice notes and calls are relayed through the server and forgotten immediately. Closing the tab erases everything.");
+
+    function section(icon, title, text) {
+      return '<div class="guide-section-item"><h5>' + icon + " " + title + "</h5><p>" + text + "</p></div>";
+    }
+
+    const banner = body ? body.querySelector(".guide-hero-banner p") : null;
+    if (banner) {
+      banner.textContent =
+        "No phone numbers, no signups, zero database logs. Everything lives in memory and vanishes when you close the tab.";
+    }
+  })();
+
+  /* ---------------------------------------------------------------
+     14. Keep the chip in sync + real mobile viewport height
+  --------------------------------------------------------------- */
+  const _origExitCallUI = typeof exitCallUI === "function" ? exitCallUI : null;
+  if (_origExitCallUI) {
+    exitCallUI = function () {
+      _origExitCallUI.apply(this, arguments);
+      const chip = document.getElementById("mic-status-chip");
+      if (chip) chip.classList.add("hidden");
+      unpinAll();
+      speakingTimers.forEach((t) => clearTimeout(t));
+      speakingTimers.clear();
+    };
+  }
+
+  function setAppVH() {
+    document.documentElement.style.setProperty("--app-vh", window.innerHeight * 0.01 + "px");
+  }
+  setAppVH();
+  window.addEventListener("resize", setAppVH);
+  window.addEventListener("orientationchange", () => setTimeout(setAppVH, 250));
+
+  console.log("TempChat v3 upgrade loaded ✓  (Auto Mute, speaking glow, maximize, screen share)");
+})();
+
