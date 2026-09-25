@@ -11,6 +11,7 @@
   </style>
 
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="/room-features.css?v=5">
 </head>
 
 <body>
@@ -25,7 +26,7 @@
           <span class="icon-sparkle">✦</span>
           <span class="icon-bubble">💬</span>
         </div>
-        <span class="eyebrow-pill">100% PRIVATE • ZERO STORAGE</span>
+        <span class="eyebrow-pill">TEMPORARY CHAT • NO DATABASE</span>
       </div>
 
       <h1 class="hero-brand-title">TempChat</h1>
@@ -102,7 +103,7 @@
 
       <div class="security-footer">
         <span class="sec-dot"></span>
-        <span>End-to-End Ephemeral • Zero logs saved</span>
+        <span>Ephemeral rooms • Server-relayed</span>
       </div>
     </div>
   </div>
@@ -475,7 +476,7 @@
 
       <div class="guide-modal-body">
         <div class="guide-hero-banner glass-card">
-          <div class="guide-badge">✦ ZERO STORAGE • 100% PRIVATE</div>
+          <div class="guide-badge">✦ TEMPORARY ROOMS • NO DATABASE</div>
           <h4>Ephemeral Calls, Media & Messaging</h4>
           <p>No phone numbers, no signups, and zero database logs. Everything is stored strictly in memory and vanishes when closed.</p>
           <a href="/manual" target="_blank" class="full-manual-link">Open Full Pamphlet Page ↗</a>
@@ -489,7 +490,7 @@
 
           <div class="guide-section-item">
             <h5>① View-Once Self-Destructing Photos</h5>
-            <p>Use <strong>📷 Snap</strong> to take direct camera photos or <strong>🖼️ Gallery</strong> to pick photos. View-once images self-destruct after 15 seconds and are purged forever.</p>
+            <p>Use <strong>📷 Snap</strong> to take direct camera photos or <strong>🖼️ Gallery</strong> to pick photos. View-once images close after 15 seconds and cannot be reopened through the app. Screenshots cannot be prevented.</p>
           </div>
 
           <div class="guide-section-item">
@@ -523,6 +524,7 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a32d64a0e8a0d97b',t:'MTc4ODAyNTc3NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+  <script src="/room-features.js?v=5"></script>
+</body>
 </html>
 

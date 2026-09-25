@@ -46,6 +46,8 @@ app.use((req, res) => {
   are strictly EPHEMERAL and in-memory only.
 */
 
+const features = require("./lib/room-features")(io);
+const { randomUUID } = require("node:crypto");
 const PRESENCE_TIMEOUT = 12000;
 const calls = new Map(); // room -> Map(socketId -> { username, callType, videoEnabled, audioEnabled })
 
@@ -107,9 +109,11 @@ function removeFromCall(socket) {
 
 io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id);
+  features.attach(socket);
 
   // Join Room
-  socket.on("join-room", ({ username, room }) => {
+  socket.on("join-room", (data = {}) => {
+    let { username, room } = data || {};
     username = String(username || "").trim().slice(0, 24);
     room = String(room || "").trim().toUpperCase().slice(0, 24);
     if (!username || !room) return;
@@ -118,6 +122,7 @@ io.on("connection", (socket) => {
       const oldRoom = socket.room;
       removeFromCall(socket);
       socket.leave(oldRoom);
+      features.left(oldRoom);
       socket.to(oldRoom).emit("system-message", {
         text: `${socket.username} left the room.`,
       });
@@ -129,6 +134,7 @@ io.on("connection", (socket) => {
     socket.username = username;
     socket.room = room;
     socket.presenceStatus = "active";
+    features.joined(socket);
 
     socket.to(room).emit("system-message", {
       text: `${username} entered the room.`,
@@ -151,24 +157,25 @@ io.on("connection", (socket) => {
   });
 
   // Text Message
-  socket.on("send-message", (message) => {
+  socket.on("send-message", (data, ack) => {
     if (!socket.room || !socket.username) return;
-    message = String(message || "").trim().slice(0, 1500);
+    const message = String(typeof data === "string" ? data : data?.message || "").trim().slice(0, 1500);
     if (!message) return;
-
+    const id = "msg_" + randomUUID();
+    const clientId = typeof data?.clientId === "string" ? data.clientId.slice(0, 80) : null;
     io.to(socket.room).emit("chat-message", {
-      id: "msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-      username: socket.username,
-      message,
+      id, clientId, ...features.record(socket, id), username: socket.username, message,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
+    if (typeof ack === "function") ack({ ok: true, id });
   });
 
   // Voice Note (Ephemeral Audio)
   socket.on("voice-message", (data) => {
     if (!socket.room || !socket.username || !data || !data.audio) return;
+    const id = "vn_" + randomUUID();
     io.to(socket.room).emit("voice-message", {
-      id: "vn_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      id, ...features.record(socket, id),
       username: socket.username,
       audio: data.audio,
       mime: data.mime || "audio/webm",
@@ -179,8 +186,9 @@ io.on("connection", (socket) => {
   // Single-Time View-Once Photo
   socket.on("single-photo", (data) => {
     if (!socket.room || !socket.username || !data || !data.image) return;
+    const id = "photo_" + randomUUID();
     io.to(socket.room).emit("single-photo", {
-      id: data.id || "photo_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+      id, ...features.record(socket, id),
       username: socket.username,
       image: data.image,
       caption: String(data.caption || "").slice(0, 200),
@@ -195,6 +203,7 @@ io.on("connection", (socket) => {
     io.to(socket.room).emit("photo-opened", {
       photoId: data.photoId,
       openedBy: socket.username,
+      openedById: socket.id,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
   });
@@ -337,6 +346,7 @@ io.on("connection", (socket) => {
   // Reset Chat
   socket.on("reset-chat", () => {
     if (!socket.room) return;
+    features.reset(socket.room);
     io.to(socket.room).emit("clear-chat");
   });
 
@@ -363,6 +373,7 @@ io.on("connection", (socket) => {
     removeFromCall(socket);
     if (socket.room && socket.username) {
       const room = socket.room;
+      features.left(room);
       socket.to(room).emit("system-message", {
         text: `${socket.username} disconnected.`,
       });
@@ -377,6 +388,6 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Temp Chat running on http://localhost:${PORT}`);
+  console.log(`Temp Chat running on http://localhost:${server.address().port}`);
 });
 

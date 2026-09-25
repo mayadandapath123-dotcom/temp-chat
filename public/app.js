@@ -591,7 +591,7 @@ if (messageForm) {
     const message = messageInput ? messageInput.value.trim() : "";
     if (!message) return;
 
-    socket.emit("send-message", message.slice(0, 1500));
+    if (!window.TempChatPlus.sendText(message.slice(0, 1500))) return;
     playSfx("send");
 
     if (messageInput) {
@@ -606,10 +606,11 @@ if (messageForm) {
 }
 
 socket.on("chat-message", (data) => {
+  window.TempChatPlus?.confirmOutgoing(data);
   appendChatMessage(data);
   appendInCallMessage(data);
 
-  if (data.username !== currentUsername) {
+  if (data.senderId ? data.senderId !== socket.id : data.username !== currentUsername) {
     notifyUser(data.username, data.message);
     if (inCall && !isCallChatOpen) {
       showInCallHeadsUp(data.username, data.message);
@@ -619,7 +620,7 @@ socket.on("chat-message", (data) => {
 
 function appendChatMessage(data) {
   if (!messages) return;
-  const isOwn = data.username === currentUsername;
+  const isOwn = data.senderId ? data.senderId === socket.id : data.username === currentUsername;
   const el = document.createElement("div");
   el.className = `message ${isOwn ? "own-message" : "other-message"}`;
   const bubble = document.createElement("div");
@@ -635,6 +636,7 @@ function appendChatMessage(data) {
   bubble.appendChild(time);
   el.appendChild(bubble);
   messages.appendChild(el);
+  window.TempChatPlus?.track(data, el);
   scrollMessagesToBottom();
 }
 
@@ -644,7 +646,7 @@ function appendChatMessage(data) {
 
 function appendInCallMessage(data) {
   if (!callChatMessages) return;
-  const isOwn = data.username === currentUsername;
+  const isOwn = data.senderId ? data.senderId === socket.id : data.username === currentUsername;
   const msgEl = document.createElement("div");
   msgEl.className = `call-chat-msg ${isOwn ? "own" : "other"}`;
   const strong = document.createElement("strong");
@@ -654,6 +656,7 @@ function appendInCallMessage(data) {
   msgEl.appendChild(strong);
   msgEl.appendChild(span);
   callChatMessages.appendChild(msgEl);
+  window.TempChatPlus?.track(data, msgEl);
   callChatMessages.scrollTop = callChatMessages.scrollHeight;
 
   if (inCall && !isCallChatOpen && !isOwn) {
@@ -731,7 +734,7 @@ if (callChatForm) {
     const text = callChatInput ? callChatInput.value.trim() : "";
     if (!text) return;
 
-    socket.emit("send-message", text.slice(0, 1500));
+    if (!window.TempChatPlus.sendText(text.slice(0, 1500))) return;
     playSfx("send");
 
     if (callChatInput) {
@@ -863,15 +866,15 @@ socket.on("single-photo", (data) => {
   ephemeralPhotoStore.set(data.id, data);
   appendPhotoMessage(data);
 
-  if (data.username !== currentUsername) {
+  if (data.senderId ? data.senderId !== socket.id : data.username !== currentUsername) {
     notifyUser(data.username, "Sent a View-Once Photo 📷");
   }
 });
 
-socket.on("photo-opened", ({ photoId, openedBy, time }) => {
-  const bubble = document.querySelector(`[data-photo-id="${photoId}"]`);
-  if (bubble) {
-    bubble.classList.add("opened");
+socket.on("photo-opened", ({ photoId, openedBy, openedById, time }) => {
+  // Another recipient opening a group photo must NOT expire everyone else's copy.
+  const bubble = document.querySelector(`[data-photo-id="${CSS.escape(photoId)}"]`);
+  if (bubble && bubble.closest(".own-message") && openedById !== socket.id) {
     const hint = bubble.querySelector(".view-once-hint");
     if (hint) hint.textContent = `Opened by ${openedBy} at ${time}`;
   }
@@ -879,7 +882,7 @@ socket.on("photo-opened", ({ photoId, openedBy, time }) => {
 
 function appendPhotoMessage(data) {
   if (!messages) return;
-  const isOwn = data.username === currentUsername;
+  const isOwn = data.senderId ? data.senderId === socket.id : data.username === currentUsername;
   const el = document.createElement("div");
   el.className = `message ${isOwn ? "own-message" : "other-message"}`;
   const bubble = document.createElement("div");
@@ -944,6 +947,7 @@ function appendPhotoMessage(data) {
 
   el.appendChild(bubble);
   messages.appendChild(el);
+  window.TempChatPlus?.track(data, el);
   scrollMessagesToBottom();
 }
 
@@ -951,6 +955,7 @@ function openViewOnceModal(photoId) {
   const photo = ephemeralPhotoStore.get(photoId);
   if (!photo) return showToast("Photo is no longer available.");
   activeViewOnceId = photoId;
+  socket.emit("photo-opened", { photoId });
   if (viewOnceImage) viewOnceImage.src = photo.image;
 
   playSfx("viewOnce");
@@ -989,17 +994,18 @@ function closeAndViewOnceDestroy() {
     const id = activeViewOnceId;
     activeViewOnceId = null;
     if (viewOnceImage) viewOnceImage.src = "";
+    const expiredPhoto = ephemeralPhotoStore.get(id);
+    if (expiredPhoto) expiredPhoto.image = null;
     ephemeralPhotoStore.delete(id);
 
     const bubble = document.querySelector(`[data-photo-id="${id}"]`);
     if (bubble) {
       bubble.classList.add("opened");
       const hint = bubble.querySelector(".view-once-hint");
-      if (hint) hint.textContent = "Expired • Purged from memory";
+      if (hint) hint.textContent = "Opened • Cannot reopen";
     }
 
-    socket.emit("photo-opened", { photoId: id });
-    showToast("Photo self-destructed.");
+    showToast("View-once photo closed.");
   }
 }
 
@@ -1115,7 +1121,7 @@ const VOICE_PAUSE_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="c
 socket.on("voice-message", (data) => {
   if (data && data.audio) {
     appendVoiceMessage(data);
-    if (data.username !== currentUsername) {
+    if (data.senderId ? data.senderId !== socket.id : data.username !== currentUsername) {
       notifyUser(data.username, "Sent a voice note 🎙️");
     }
   }
@@ -1123,7 +1129,7 @@ socket.on("voice-message", (data) => {
 
 function appendVoiceMessage(data) {
   if (!messages) return;
-  const isOwn = data.username === currentUsername;
+  const isOwn = data.senderId ? data.senderId === socket.id : data.username === currentUsername;
   const el = document.createElement("div");
   el.className = `message ${isOwn ? "own-message" : "other-message"}`;
   const bubble = document.createElement("div");
@@ -1138,6 +1144,7 @@ function appendVoiceMessage(data) {
   bubble.appendChild(time);
   el.appendChild(bubble);
   messages.appendChild(el);
+  window.TempChatPlus?.track(data, el);
   scrollMessagesToBottom();
 }
 
@@ -1964,6 +1971,8 @@ function localSystemMessage(text) {
 }
 
 socket.on("clear-chat", () => {
+  closeAndViewOnceDestroy();
+  ephemeralPhotoStore.clear();
   if (messages) messages.innerHTML = "";
   if (callChatMessages) callChatMessages.innerHTML = "";
   playSfx("reset");
@@ -2862,7 +2871,7 @@ socket.on("disconnect", () => {
       section("🔔", "Notifications", "Open <strong>⋯ → Enable Notifications</strong> and allow it. Needed once per device. On phones this requires the tap — browsers refuse to ask on their own.") +
       section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +
       section("🔴", "Reset Room", "Wipes the whole room's chat for everyone, instantly.") +
-      section("🔒", "Privacy &amp; Data", "No accounts, no database, nothing written to disk. Messages, photos, voice notes and calls are relayed through the server and forgotten immediately. Closing the tab erases everything.");
+      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens.");
 
     function section(icon, title, text) {
       return '<div class="guide-section-item"><h5>' + icon + " " + title + "</h5><p>" + text + "</p></div>";
@@ -2871,7 +2880,7 @@ socket.on("disconnect", () => {
     const banner = body ? body.querySelector(".guide-hero-banner p") : null;
     if (banner) {
       banner.textContent =
-        "No phone numbers, no signups, zero database logs. Everything lives in memory and vanishes when you close the tab.";
+        "No phone numbers, no signups, no message database. Content is temporary, but recipients can capture or retain it.";
     }
   })();
 
@@ -3939,7 +3948,7 @@ socket.on("disconnect", () => {
       section("🔔", "Notifications", "Open <strong>⋯ → Enable Notifications</strong> and allow it. Needed once per device. On phones this requires the tap — browsers refuse to ask on their own.") +
       section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +
       section("🔴", "Reset Room", "Wipes the whole room's chat for everyone, instantly.") +
-      section("🔒", "Privacy &amp; Data", "No accounts, no database, nothing written to disk. Messages, photos, voice notes and calls are relayed through the server and forgotten immediately. Closing the tab erases everything.");
+      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens.");
 
     function section(icon, title, text) {
       return '<div class="guide-section-item"><h5>' + icon + " " + title + "</h5><p>" + text + "</p></div>";
@@ -3948,7 +3957,7 @@ socket.on("disconnect", () => {
     const banner = body ? body.querySelector(".guide-hero-banner p") : null;
     if (banner) {
       banner.textContent =
-        "No phone numbers, no signups, zero database logs. Everything lives in memory and vanishes when you close the tab.";
+        "No phone numbers, no signups, no message database. Content is temporary, but recipients can capture or retain it.";
     }
   })();
 
