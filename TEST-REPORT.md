@@ -1,56 +1,41 @@
-# Camera fix v5.1 — test report
+# TempChat v6 — test report
 
-Base: GitHub main `9ea76daa` (previous receipts/themes release).
+Base: latest GitHub main `8e4fd56a` (camera fix release).
 
-## Automated tests: 14 passed
+## Automated checks
 
-Camera/helper regression tests:
-1. Old camera released before next camera request; strict facing; audio never requested.
-2. Explicit device-ID fallback when strict facing is unsupported.
-3. Silent return of the old/wrong camera rejected and unwanted track stopped.
-4. One-camera device restores its previous camera after a failed flip.
-5. A track returned after cancellation is stopped rather than leaked.
-6. Initial opening accepts a single camera and records actual facing.
-7. Already-cancelled operations do not request hardware.
-8. Permission denial does not pretend a flip succeeded.
-9. Screenshot-permission UI/event handlers removed from source.
+**28 tests passed**, covering:
+- Previous camera-flip release/recovery/cancellation behavior and removal of screenshot-permission handlers.
+- Group receipts, room isolation, duplicate names, media IDs, late-join behavior, wallpapers, reset, presence/typing and participant-only audio relay.
+- Canonical quoted author/text, cross-room and unauthorized quote rejection, bounded excerpts, no view-once media/caption leakage, stale target rejection after reset.
+- Native zoom with simulated capabilities, native-range overflow to digital crop, unsupported/ignored/failed native constraints, outgoing crop coordinates, reset/new-track behavior, invalid values and serialized requests.
+- Service-worker lifecycle acknowledgement/error handling, exact-originating-tab focus, and safe room-link opening when that tab is gone. Notification worker tests use simulated platform APIs, not a real phone notification tray.
 
-Existing Socket.IO integration tests retained and passed:
-10. Group receipt snapshots, duplicate usernames, late-join exclusion, room isolation.
-11. Photo/voice-note IDs and receipts.
-12. Shared wallpapers, validation, throttle, late join, palette-only bandwidth behavior and cleanup.
-13. Reset clears receipt and appearance state.
-14. Presence, typing and active-participant-only call audio relay.
+The installer also passed a separate-HOME dry-run: correct repository cloned, source backed up, all release files copied, 28 tests passed, and no commit/push performed. Syntax checks, `git diff --check`, and dependency audit passed (zero known dependency vulnerabilities reported at packaging).
 
-JavaScript syntax, deployment shell syntax and `git diff --check` passed. A separate-HOME installer dry-run cloned the latest repo, made a backup, applied files and passed all 14 tests without committing or pushing.
+## Browser smoke tests
 
-## Browser testing
+Chromium sessions included a 390×844 mobile viewport with touch enabled. Camera streams were simulated using real canvas-backed MediaStream tracks plus a fake microphone. Tests passed:
+- **Actual touch-event swipe** through Chrome's input protocol selects a reply draft.
+- Sending displays a quote on the other participant's page, in normal chat and the call drawer.
+- Cancel, jump-to-original/highlight and rejected-draft text recovery work.
+- Photo camera digital zoom, flip resetting to 1×, capture, call zoom and microphone preservation.
+- Notification blocked-permission guidance and notification controls render correctly.
+- Success/error messaging and privacy/off behavior tested with an explicitly mocked permission/worker acknowledgement. The sandbox browser reported Notification.permission as denied even with test permission overrides; actual OS notification display was NOT verified.
+- No horizontal page overflow and no uncaught page JavaScript errors in the completed smoke run.
 
-Chromium with a mobile-size viewport and **simulated front/rear cameras** (canvas-backed MediaStream tracks). The test deliberately rejects a second camera while the old one is active to reproduce a common phone camera constraint. A fake microphone provides a real browser MediaStream audio track.
+This does not certify actual Android/iPhone hardware, optical zoom, mobile operating-system notifications, or locked/closed-app delivery. Real-device testing remains necessary. No authenticated GitHub push or Render deployment was performed from this workspace.
 
-Passed:
-- Photo camera opens, flips both ways and captures an image.
-- Closing during delayed acquisition stops the late camera stream.
-- Video-call camera flips both ways without replacing/stopping/unmuting the microphone.
-- Device-ID fallback switches when facingMode is rejected.
-- Rapid repeated Flip events do not start overlapping switches.
-- Flip during screen sharing makes no camera request.
-- Leaving during delayed switching stops the eventual camera track.
-- A one-camera device restores its only camera and correct facing.
-- Screenshot permission button/menu absent; themes still apply.
-- No uncaught browser JavaScript errors during the smoke run.
+## Short real-device checklist
 
-These are simulations, **not verification on your particular phone**. Actual Android/iPhone hardware, browser versions, camera permissions, and another app holding the camera can still affect behavior. No deployment or authenticated GitHub push has been performed here.
+1. Reopen the updated HTTPS app on two devices. Send a message from B. Swipe it on A, type a reply, and confirm B sees the correct quote. Test Cancel and tap-to-jump.
+2. Reply to a photo/voice tile with text. A view-once quote must contain only its media label, not the picture or hidden caption. A swipe must not open it.
+3. Test a text reply inside a video call. Check group Sent/Delivered/Seen counts remain correct.
+4. Open photo camera and select 1×, 2×, 3×, 10×. Note whether the label says device or digital zoom. Capture a photo and verify its crop matches the chosen zoom. Flip camera and confirm reset to 1×.
+5. During a video call, change zoom and ask the other person to confirm their incoming video changes. Mute and flip/zoom; the mic must stay muted. Keep tests short because video uses Render bandwidth.
+6. Open ⋯ → Notification settings & test. Allow permission and send a test. Check the phone's notification shade; a browser-accepted test may still be suppressed by phone settings.
+7. Try previews off/on, app-alerts off, and blocked browser permission. In a second room/tab, verify tapping an existing alert targets its originating tab.
+8. If using a new Render workspace/address, grant notification permission on that new address and replace old Home Screen shortcuts.
+9. Verify themes, camera flipping, photos and reset still work. Screenshot-permission controls must remain absent.
 
-## Real-device checklist after deployment
-
-1. Close/reopen the page to load v5.1. Use HTTPS; allow microphone/camera access.
-2. Open the photo camera. Flip rear → front → rear, then take/send a photo. Verify the actual view changes, not just its mirror.
-3. Start a video call with a friend. Flip both ways. Ask the friend to confirm their incoming video changes too.
-4. Mute the microphone and flip again. It must stay muted. Unmute and verify audio still works.
-5. Tap Flip rapidly. It should finish one switch without freezing.
-6. Leave a call while switching, or close the photo camera while it opens. Check the phone's camera indicator turns off once the pending request completes.
-7. On a single-camera computer, Flip should fail gracefully and restore the current camera, not claim a nonexistent back camera.
-8. Confirm no screenshot-permission controls/popups remain. Test a text receipt and shared theme to confirm those features remain.
-
-If a real phone still cannot switch, report the phone model, browser, whether it is the call/photo flip button, and the exact toast/error. Keep video tests short to avoid excessive Render bandwidth.
+Reminder: no server Web Push is configured. Closed tabs and phone-suspended pages cannot reliably receive new-message alerts. Browser camera APIs do not guarantee optical zoom.

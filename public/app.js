@@ -499,7 +499,6 @@ function joinChat() {
   currentUsername = finalUsername.slice(0, 20);
   currentRoom = rawRoom.slice(0, 20);
 
-  requestNotificationPermission();
   getSfxContext();
 
   socket.emit("join-room", {
@@ -1207,6 +1206,7 @@ function buildVoicePlayer(data) {
 
 async function startVoiceRecording() {
   if (mediaRecorder) return;
+  if (window.TempChatReplies?.current()) return showToast("Type a text reply, or cancel the reply before recording a voice note.");
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1558,7 +1558,7 @@ function startLiveStreamingPipes() {
           offscreenCanvas.height = targetH;
         }
 
-        offscreenCtx.drawImage(localVideoElement, 0, 0, targetW, targetH);
+        window.TempChatZoom.draw(offscreenCtx, localVideoElement, targetW, targetH);
         const frameData = offscreenCanvas.toDataURL("image/jpeg", VIDEO_JPEG_QUALITY);
 
         // BANDWIDTH GUARD: skip near-identical frames (static scene / phone on table).
@@ -2179,48 +2179,14 @@ socket.on("disconnect", () => {
         `new Notification(...)` throws "Illegal constructor" on Android.
         Phones only allow notifications via a service worker.
   --------------------------------------------------------------- */
-  let swRegistration = null;
-  (async function registerSW() {
-    if (!("serviceWorker" in navigator)) return;
-    try {
-      swRegistration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-      await navigator.serviceWorker.ready;
-    } catch (e) { console.warn("SW registration failed:", e); }
-  })();
-
-  async function askNotificationPermission() {
-    if (!("Notification" in window)) return "unsupported";
-    try {
-      if (Notification.permission === "default") return await Notification.requestPermission();
-      return Notification.permission;
-    } catch (e) { return "denied"; }
-  }
-
-  async function showSystemNotification(title, body, opts) {
-    opts = opts || {};
-    if (!("Notification" in window) || Notification.permission !== "granted") return;
-    try {
-      const reg = swRegistration || (navigator.serviceWorker ? await navigator.serviceWorker.ready : null);
-      if (reg && reg.showNotification) {
-        await reg.showNotification(title, {
-          body: body || "",
-          tag: opts.tag || "tempchat-msg",
-          renotify: true,
-          vibrate: opts.vibrate || [180, 80, 180],
-        });
-        return;
-      }
-    } catch (e) {}
-    try { new Notification(title, { body: body, tag: opts.tag || "tempchat-msg" }); } catch (e) {}
-  }
-
+  // Centralized service-worker notifications; no duplicate registrations.
+  async function askNotificationPermission() { return window.TempChatNotifications.enable(); }
+  async function showSystemNotification(title, body, opts) { return window.TempChatNotifications.show(title, body, { ...opts, room: currentRoom }); }
   notifyUser = function (title, body, opts) {
-    opts = opts || {};
-    try { playSfx("receive"); } catch (e) {}
-    if (document.visibilityState !== "visible") {
-      try { unreadCount++; startTitleFlashing(); } catch (e) {}
-      showSystemNotification(title, body, opts);
-      if (navigator.vibrate) { try { navigator.vibrate(opts.vibrate || [180, 80, 180]); } catch (e) {} }
+    try { playSfx("receive"); } catch (_) {}
+    if (document.hidden || !document.hasFocus()) {
+      try { unreadCount++; startTitleFlashing(); } catch (_) {}
+      window.TempChatNotifications.show(title, body, { ...opts, room: currentRoom }).catch(() => {});
     }
   };
 
@@ -2415,7 +2381,7 @@ socket.on("disconnect", () => {
           if (offscreenCanvas.width !== tw || offscreenCanvas.height !== th) {
             offscreenCanvas.width = tw; offscreenCanvas.height = th;
           }
-          offscreenCtx.drawImage(localVideoElement, 0, 0, tw, th);
+          window.TempChatZoom.draw(offscreenCtx, localVideoElement, tw, th);
           const frameData = offscreenCanvas.toDataURL("image/jpeg", window.__activeVideoQuality);
 
           if (frameData.length === lastSentFrameLength) {
@@ -2764,7 +2730,7 @@ socket.on("disconnect", () => {
     camEls.canvas.width = tw; camEls.canvas.height = th;
     const ctx = camEls.canvas.getContext("2d", { alpha: false });
     if (snapFacing === "user") { ctx.translate(tw, 0); ctx.scale(-1, 1); }
-    ctx.drawImage(v, 0, 0, tw, th);
+    window.TempChatZoom.draw(ctx, v, tw, th);
 
     pendingPhotoDataUrl = camEls.canvas.toDataURL("image/jpeg", 0.72);
     const prev = document.getElementById("preview-img");
@@ -2903,10 +2869,10 @@ socket.on("disconnect", () => {
       section("📷", "Direct Camera", "The <strong>📷</strong> button opens a real in-app camera with a live preview, shutter and front/back flip — it no longer opens your file manager. Use <strong>🖼️</strong> to pick an existing photo instead.") +
       section("①", "View-Once Photos", "Photos marked view-once self-destruct after being opened and are wiped from memory. The sender is told the moment you open one.") +
       section("🎙️", "Voice Notes", "Hold or tap the mic in the composer to record up to 60 seconds, with a scrubbable waveform.") +
-      section("🔔", "Notifications", "Open <strong>⋯ → Enable Notifications</strong> and allow it. Needed once per device. On phones this requires the tap — browsers refuse to ask on their own.") +
+      section("🔔", "Notifications", "Open <strong>⋯ → Notification settings &amp; test</strong>. Permission is per device and site address. Mobile alerts depend on your browser staying active; closed or suspended apps do not receive messages without a Web Push backend.") +
       section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +
       section("🔴", "Reset Room", "Wipes the whole room's chat for everyone, instantly.") +
-      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens.");
+      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens.");
 
     function section(icon, title, text) {
       return '<div class="guide-section-item"><h5>' + icon + " " + title + "</h5><p>" + text + "</p></div>";
@@ -2985,48 +2951,14 @@ socket.on("disconnect", () => {
         `new Notification(...)` throws "Illegal constructor" on Android.
         Phones only allow notifications via a service worker.
   --------------------------------------------------------------- */
-  let swRegistration = null;
-  (async function registerSW() {
-    if (!("serviceWorker" in navigator)) return;
-    try {
-      swRegistration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-      await navigator.serviceWorker.ready;
-    } catch (e) { console.warn("SW registration failed:", e); }
-  })();
-
-  async function askNotificationPermission() {
-    if (!("Notification" in window)) return "unsupported";
-    try {
-      if (Notification.permission === "default") return await Notification.requestPermission();
-      return Notification.permission;
-    } catch (e) { return "denied"; }
-  }
-
-  async function showSystemNotification(title, body, opts) {
-    opts = opts || {};
-    if (!("Notification" in window) || Notification.permission !== "granted") return;
-    try {
-      const reg = swRegistration || (navigator.serviceWorker ? await navigator.serviceWorker.ready : null);
-      if (reg && reg.showNotification) {
-        await reg.showNotification(title, {
-          body: body || "",
-          tag: opts.tag || "tempchat-msg",
-          renotify: true,
-          vibrate: opts.vibrate || [180, 80, 180],
-        });
-        return;
-      }
-    } catch (e) {}
-    try { new Notification(title, { body: body, tag: opts.tag || "tempchat-msg" }); } catch (e) {}
-  }
-
+  // Centralized service-worker notifications; no duplicate registrations.
+  async function askNotificationPermission() { return window.TempChatNotifications.enable(); }
+  async function showSystemNotification(title, body, opts) { return window.TempChatNotifications.show(title, body, { ...opts, room: currentRoom }); }
   notifyUser = function (title, body, opts) {
-    opts = opts || {};
-    try { playSfx("receive"); } catch (e) {}
-    if (document.visibilityState !== "visible") {
-      try { unreadCount++; startTitleFlashing(); } catch (e) {}
-      showSystemNotification(title, body, opts);
-      if (navigator.vibrate) { try { navigator.vibrate(opts.vibrate || [180, 80, 180]); } catch (e) {} }
+    try { playSfx("receive"); } catch (_) {}
+    if (document.hidden || !document.hasFocus()) {
+      try { unreadCount++; startTitleFlashing(); } catch (_) {}
+      window.TempChatNotifications.show(title, body, { ...opts, room: currentRoom }).catch(() => {});
     }
   };
 
@@ -3321,7 +3253,7 @@ socket.on("disconnect", () => {
           if (offscreenCanvas.width !== tw || offscreenCanvas.height !== th) {
             offscreenCanvas.width = tw; offscreenCanvas.height = th;
           }
-          offscreenCtx.drawImage(localVideoElement, 0, 0, tw, th);
+          window.TempChatZoom.draw(offscreenCtx, localVideoElement, tw, th);
           const frameData = offscreenCanvas.toDataURL("image/jpeg", window.__activeVideoQuality);
 
           if (frameData.length === lastSentFrameLength) {
@@ -3801,7 +3733,7 @@ socket.on("disconnect", () => {
     camEls.canvas.width = tw; camEls.canvas.height = th;
     const ctx = camEls.canvas.getContext("2d", { alpha: false });
     if (snapFacing === "user") { ctx.translate(tw, 0); ctx.scale(-1, 1); }
-    ctx.drawImage(v, 0, 0, tw, th);
+    window.TempChatZoom.draw(ctx, v, tw, th);
 
     pendingPhotoDataUrl = camEls.canvas.toDataURL("image/jpeg", 0.72);
     const prev = document.getElementById("preview-img");
@@ -4002,10 +3934,10 @@ socket.on("disconnect", () => {
       section("📷", "Direct Camera", "The <strong>📷</strong> button opens a real in-app camera with a live preview, shutter and front/back flip — it no longer opens your file manager. Use <strong>🖼️</strong> to pick an existing photo instead.") +
       section("①", "View-Once Photos", "Photos marked view-once self-destruct after being opened and are wiped from memory. The sender is told the moment you open one.") +
       section("🎙️", "Voice Notes", "Hold or tap the mic in the composer to record up to 60 seconds, with a scrubbable waveform.") +
-      section("🔔", "Notifications", "Open <strong>⋯ → Enable Notifications</strong> and allow it. Needed once per device. On phones this requires the tap — browsers refuse to ask on their own.") +
+      section("🔔", "Notifications", "Open <strong>⋯ → Notification settings &amp; test</strong>. Permission is per device and site address. Mobile alerts depend on your browser staying active; closed or suspended apps do not receive messages without a Web Push backend.") +
       section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +
       section("🔴", "Reset Room", "Wipes the whole room's chat for everyone, instantly.") +
-      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens.");
+      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens.");
 
     function section(icon, title, text) {
       return '<div class="guide-section-item"><h5>' + icon + " " + title + "</h5><p>" + text + "</p></div>";

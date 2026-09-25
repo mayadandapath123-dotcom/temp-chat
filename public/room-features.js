@@ -55,7 +55,7 @@
     if (!receiptTimer) receiptTimer = setTimeout(flushReceipts, 150);
   }
   function statusLabel(r) {
-    if (r.pending) return r.failed ? 'Not confirmed · tap for details' : 'Sending…';
+    if (r.pending) return r.rejected ? 'Not sent · tap for details' : r.failed ? 'Not confirmed · tap for details' : 'Sending…';
     const peers = r.recipients || [];
     const total = r.total ?? peers.length;
     if (!total) return 'Sent · no other members';
@@ -77,7 +77,7 @@
     const body = open('Message activity', 'receipt');
     body.append(el('div', statusLabel(r), 'tc-summary'));
     if (r.pending) {
-      note(body, r.failed ? 'Delivery was not confirmed. The message may or may not have arrived. Check the connection before resending to avoid a duplicate.' : 'Waiting for the server to accept this message.');
+      note(body, r.rejected || (r.failed ? 'Delivery was not confirmed. The message may or may not have arrived. Check the connection before resending to avoid a duplicate.' : 'Waiting for the server to accept this message.'));
       if (r.failed) button(body, 'Copy text back to composer', () => { messageInput.value = r.text || ''; dialog.close(); messageInput.focus(); });
       return;
     }
@@ -145,13 +145,20 @@
   function sendText(text) {
     if (!ready || !socket.connected) { showToast('Not connected. Your text has not been sent.'); return false; }
     const clientId = 'local_' + (crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2)}`);
-    const data = { id: clientId, senderId: socket.id, username: currentUsername, message: text, pending: true, time: 'Sending…' };
+    const reply = window.TempChatReplies?.current() || null;
+    const data = { reply, id: clientId, senderId: socket.id, username: currentUsername, message: text, pending: true, time: 'Sending…' };
     appendChatMessage(data); appendInCallMessage(data);
     const p = { timer: setTimeout(() => { const r = records.get(clientId); if (r) { r.failed = true; repaint(r); } }, 12000) };
     pending.set(clientId, p);
-    socket.emit('send-message', { clientId, message: text });
+    socket.emit('send-message', { clientId, message: text, replyTo: reply?.id || null });
+    window.TempChatReplies?.clear();
     return true;
   }
+  socket.on('message-rejected', ({ clientId, error }) => {
+    const r = records.get(clientId); if (!r) return;
+    clearTimeout(pending.get(clientId)?.timer);
+    r.failed = true; r.rejected = error; repaint(r); showToast(error);
+  });
   window.TempChatPlus = { track, confirmOutgoing, sendText };
 
   // Appearance is shared server state. A wallpaper is sent once per change/join.
@@ -260,7 +267,7 @@
   });
   const guide = document.querySelector('.guide-sections');
   if (guide) {
-    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts & shared themes'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Room theme for shared colours and a compressed photo wallpaper. The server relays content: this is not end-to-end encrypted. Wallpapers and receipt metadata are temporarily kept in memory; nothing is added to a database by these features.'));
+    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts & shared themes'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Room theme for shared colours and a compressed photo wallpaper. The server relays content: this is not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are temporarily kept in memory; nothing is added to a database by these features.'));
     guide.prepend(item);
   }
 })();

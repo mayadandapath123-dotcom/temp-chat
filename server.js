@@ -163,8 +163,14 @@ io.on("connection", (socket) => {
     if (!message) return;
     const id = "msg_" + randomUUID();
     const clientId = typeof data?.clientId === "string" ? data.clientId.slice(0, 80) : null;
+    const quote = features.reply(socket, data?.replyTo);
+    if (quote.error) {
+      socket.emit("message-rejected", { clientId, error: quote.error });
+      if (typeof ack === "function") ack({ error: quote.error });
+      return;
+    }
     io.to(socket.room).emit("chat-message", {
-      id, clientId, ...features.record(socket, id), username: socket.username, message,
+      id, clientId, ...features.record(socket, id, { kind: "text", text: message }), reply: quote.value, username: socket.username, message,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
     if (typeof ack === "function") ack({ ok: true, id });
@@ -175,7 +181,7 @@ io.on("connection", (socket) => {
     if (!socket.room || !socket.username || !data || !data.audio) return;
     const id = "vn_" + randomUUID();
     io.to(socket.room).emit("voice-message", {
-      id, ...features.record(socket, id),
+      id, ...features.record(socket, id, { kind: "voice", text: "Voice note" }),
       username: socket.username,
       audio: data.audio,
       mime: data.mime || "audio/webm",
@@ -188,7 +194,7 @@ io.on("connection", (socket) => {
     if (!socket.room || !socket.username || !data || !data.image) return;
     const id = "photo_" + randomUUID();
     io.to(socket.room).emit("single-photo", {
-      id, ...features.record(socket, id),
+      id, ...features.record(socket, id, { kind: "photo", text: data.isViewOnce !== false ? "View-once photo" : "Photo" }),
       username: socket.username,
       image: data.image,
       caption: String(data.caption || "").slice(0, 200),

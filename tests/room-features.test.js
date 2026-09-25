@@ -74,7 +74,7 @@ test('shared theme: binary wallpaper, validation, throttling, late join, empty r
 test('reset clears receipts and shared wallpaper', async () => {
   const a = await connect('RESET', 'A'), b = await connect('RESET', 'B'); const msg = await message(a); await wait(50);
   await ack(a, 'set-room-theme', { palette:'rose', shade:60, wallpaperAction:'keep' });
-  const theme = event(b, 'room-theme'), cleared = event(b, 'clear-chat');
+  const theme = event(b, 'room-theme', d => d.palette === 'gold'), cleared = event(b, 'clear-chat');
   a.emit('reset-chat'); assert.equal((await theme).palette, 'gold'); await cleared;
   let updated = false; a.on('message-status', () => updated = true); b.emit('message-receipts', { ids:[msg.id], kind:'seen' }); await wait(300); assert.equal(updated,false);
 });
@@ -86,4 +86,24 @@ test('existing calls relay media only to active participants; presence and typin
   let leaked = false; watcher.on('audio-pcm', () => leaked = true);
   const audio = event(b,'audio-pcm'); a.emit('audio-pcm',{pcm:Buffer.from([0,0,1,0]),sampleRate:16000}); assert.equal((await audio).from,a.id);
   await wait(80); assert.equal(leaked,false);
+});
+
+test('reply quotes are canonical, room-scoped and cannot impersonate original author',async()=>{
+ const a=await connect('REPLIES','Alpha'),b=await connect('REPLIES','Beta'),x=await connect('OTHERREPLY','X');
+ const original=await message(a,'Original text');
+ const response=event(a,'chat-message',d=>d.message==='Reply text');
+ b.emit('send-message',{message:'Reply text',replyTo:original.id,reply:{username:'Fake',text:'Forged'}});
+ const m=await response;assert.equal(m.reply.username,'Alpha');assert.equal(m.reply.text,'Original text');assert.equal(m.reply.id,original.id);
+ const rejected=event(x,'message-rejected');x.emit('send-message',{clientId:'bad',message:'Cross-room attempt',replyTo:original.id});assert.equal((await rejected).clientId,'bad');
+ const late=await connect('REPLIES','Late');const denied=event(late,'message-rejected');late.emit('send-message',{message:'guess',replyTo:original.id});assert.ok((await denied).error);
+});
+test('reply summaries are bounded; view-once photos do not copy hidden image/caption',async()=>{
+ const a=await connect('REPLYMEDIA','A'),b=await connect('REPLYMEDIA','B');
+ const original=await message(a,'x'.repeat(300));
+ const reply=event(a,'chat-message',d=>d.message==='short');b.emit('send-message',{message:'short',replyTo:original.id});assert.equal((await reply).reply.text.length,180);
+ const photo=event(b,'single-photo');a.emit('single-photo',{image:'secret-image-data',caption:'secret caption',isViewOnce:true});const p=await photo;
+ const quoted=event(a,'chat-message',d=>d.message==='photo reply');b.emit('send-message',{message:'photo reply',replyTo:p.id});const r=(await quoted).reply;
+ assert.equal(r.text,'View-once photo');assert.equal(r.kind,'photo');assert.ok(!JSON.stringify(r).includes('secret'));
+ const reset=event(a,'clear-chat');a.emit('reset-chat');await reset;
+ const rejected=event(b,'message-rejected');b.emit('send-message',{message:'stale',replyTo:p.id});assert.ok((await rejected).error);
 });

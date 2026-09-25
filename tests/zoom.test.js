@@ -1,0 +1,11 @@
+'use strict';
+const {test}=require('node:test');const assert=require('node:assert/strict');const zoom=require('../public/camera-zoom');
+function native(max=3, ignore=false){let value=1;const calls=[];return {readyState:'live',calls,getCapabilities:()=>({zoom:{min:1,max,step:.1}}),getSettings:()=>({zoom:value}),applyConstraints:async c=>{calls.push(c.advanced[0].zoom);if(!ignore)value=c.advanced[0].zoom;}};}
+test('native camera zoom is used within advertised range',async()=>{const t=native();const r=await zoom.set(t,2);assert.equal(r.mode,'camera');assert.equal(r.digital,1);assert.equal(t.getSettings().zoom,2);});
+test('10x beyond native range resets camera and uses a labeled digital crop',async()=>{const t=native();await zoom.set(t,3);const r=await zoom.set(t,10);assert.equal(r.mode,'digital');assert.equal(r.digital,10);assert.equal(t.getSettings().zoom,1);});
+test('unsupported zoom and silently ignored constraints use digital fallback',async()=>{for(const t of [{readyState:'live'},native(10,true)]){const r=await zoom.set(t,3);assert.equal(r.mode,'digital');assert.equal(r.digital,3);}});
+test('native failure at baseline still permits digital zoom',async()=>{const t=native();t.applyConstraints=async()=>{throw new Error('unsupported');};assert.equal((await zoom.set(t,2)).digital,2);});
+test('center crop used by outgoing photo and call frames',async()=>{const t={readyState:'live'};await zoom.set(t,2);let args;zoom.draw({drawImage:(...a)=>args=a},{srcObject:{getVideoTracks:()=>[t]},videoWidth:1000,videoHeight:800},400,320);assert.deepEqual(args.slice(1),[250,200,500,400,0,0,400,320]);});
+test('zoom back to 1x removes crop and new track starts unzoomed',async()=>{const t={readyState:'live'};await zoom.set(t,10);await zoom.set(t,1);assert.equal(zoom.state(t).digital,1);assert.equal(zoom.state({readyState:'live'}).digital,1);});
+test('invalid zoom and stopped tracks rejected',async()=>{await assert.rejects(zoom.set({readyState:'ended'},2));await assert.rejects(zoom.set({readyState:'live'},11));});
+test('queued zoom changes preserve last selection',async()=>{const t=native(10);await Promise.all([zoom.set(t,2),zoom.set(t,3),zoom.set(t,10)]);assert.equal(zoom.state(t).factor,10);assert.deepEqual(t.calls,[2,3,10]);});
