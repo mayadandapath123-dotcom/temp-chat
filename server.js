@@ -28,6 +28,17 @@ const io = new Server(server, {
   pingInterval: 10000,
 });
 
+const pushService = require("./lib/push-service")();
+app.get("/api/push/config", (req, res) => res.set("Cache-Control", "no-store").json(pushService.config()));
+app.post("/api/push/unregister", express.json({ limit: "16kb" }), (req, res) => {
+  const origin = req.get("origin");
+  try { if (origin && new URL(origin).host !== req.get("host")) return res.status(403).json({ error: "Origin mismatch." }); }
+  catch (_) { return res.status(403).json({ error: "Invalid origin." }); }
+  if (req.body?.scope === "device") pushService.disableDevice(req.body?.token);
+  else pushService.unregister(req.body?.token);
+  res.set("Cache-Control", "no-store").json({ ok: true });
+});
+
 // Serve frontend files from the 'public' folder
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -110,6 +121,7 @@ function removeFromCall(socket) {
 io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id);
   features.attach(socket);
+  pushService.attach(socket);
 
   // Join Room
   socket.on("join-room", (data = {}) => {
@@ -121,6 +133,7 @@ io.on("connection", (socket) => {
     if (socket.room) {
       const oldRoom = socket.room;
       removeFromCall(socket);
+      pushService.leave(socket);
       socket.leave(oldRoom);
       features.left(oldRoom);
       socket.to(oldRoom).emit("system-message", {
@@ -143,6 +156,23 @@ io.on("connection", (socket) => {
     broadcastPresence(room);
     broadcastCallStatus(room);
     startPresenceTimeout(socket);
+  });
+
+  // Explicit Exit affects this connection only; it never emits clear-chat.
+  socket.on("leave-room", (data, ack) => {
+    const room = socket.room, username = socket.username;
+    clearTimeout(socket.presenceTimeout);
+    removeFromCall(socket);
+    pushService.leave(socket);
+    if (data?.token) pushService.unregister(data.token);
+    if (room) {
+      socket.leave(room); socket.room = null; socket.username = null;
+      features.left(room);
+      io.to(room).emit("user-stop-typing", { username });
+      io.to(room).emit("system-message", { text: `${username} left the room.` });
+      broadcastPresence(room); broadcastCallStatus(room);
+    }
+    if (typeof ack === "function") ack({ ok: true });
   });
 
   // Typing Indicators
@@ -173,6 +203,7 @@ io.on("connection", (socket) => {
       id, clientId, ...features.record(socket, id, { kind: "text", text: message }), reply: quote.value, username: socket.username, message,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
+    pushService.notify(socket, { id, title: socket.username, body: message });
     if (typeof ack === "function") ack({ ok: true, id });
   });
 
@@ -187,6 +218,7 @@ io.on("connection", (socket) => {
       mime: data.mime || "audio/webm",
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
+    pushService.notify(socket, { id, title: socket.username, body: "Sent a voice note" });
   });
 
   // Single-Time View-Once Photo
@@ -201,6 +233,7 @@ io.on("connection", (socket) => {
       isViewOnce: data.isViewOnce !== false,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
+    pushService.notify(socket, { id, title: socket.username, body: data.isViewOnce !== false ? "Sent a view-once photo" : "Sent a photo" });
   });
 
   // Photo Opened Notification
@@ -353,6 +386,8 @@ io.on("connection", (socket) => {
   socket.on("reset-chat", () => {
     if (!socket.room) return;
     features.reset(socket.room);
+    pushService.reset(socket.room);
+    io.to(socket.room).emit("push-reset");
     io.to(socket.room).emit("clear-chat");
   });
 
@@ -376,6 +411,7 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     clearTimeout(socket.presenceTimeout);
+    pushService.disconnect(socket);
     removeFromCall(socket);
     if (socket.room && socket.username) {
       const room = socket.room;

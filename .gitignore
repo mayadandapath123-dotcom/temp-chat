@@ -1,2 +1,6 @@
 node_modules/
 .env
+.env.*
+!.env.example
+push-keys.env
+*push-subscriptions*.json

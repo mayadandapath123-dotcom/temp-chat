@@ -42,3 +42,15 @@ video.tc-zoom-preview.mirrored,.self-tile.mirrored video.tc-zoom-preview { trans
 .tc-notify-preview input { accent-color:var(--accent); }
 .tc-device-warning { padding:12px; border-left:3px solid var(--accent); background:var(--accent-subtle); border-radius:8px; }
 @media(max-height:500px) { .tc-zoom-call { position:absolute; bottom:90px; left:10px; } .tc-zoom-photo { bottom:90px; } }
+/* v7: visible Exit and real links */
+.tc-room-tools .tc-exit-room,.call-screen-header .tc-exit-room { flex:0 0 auto; padding:9px 13px; border:1px solid #f8717170; border-radius:9px; color:#ffd6d6; background:#852f2f42; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
+.tc-room-tools .tc-exit-room:hover,.call-screen-header .tc-exit-room:hover { background:#9b313169; }
+.tc-exit-room:disabled { opacity:.55; cursor:wait; }
+.tc-chat-link { color:var(--accent-light); text-decoration:underline; text-underline-offset:3px; overflow-wrap:anywhere; }
+.tc-chat-link:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.tc-push-toggle { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px; border-radius:12px; border:1px solid var(--accent-border); background:var(--accent-subtle); margin-bottom:16px; }
+.tc-push-toggle strong { display:block; font-size:14px; color:var(--text); }
+.tc-push-toggle small { display:block; margin-top:6px; font-size:11px; line-height:1.5; color:var(--text-dim); }
+.tc-push-toggle input { width:24px; height:24px; accent-color:var(--accent); flex-shrink:0; }
+
+[data-room-theme="daylight"] .tc-room-tools .tc-exit-room { color:#852020; background:#fbe0e0; }

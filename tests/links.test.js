@@ -1,0 +1,6 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict');const {parts}=require('../public/links');
+test('HTTP, HTTPS, www and bare domains get explicit safe destinations',()=>{const p=parts('Try https://example.com/a?q=1 and www.example.org then example.net/path.');const links=p.filter(x=>x.href);assert.equal(links.length,3);assert.equal(links[2].href,'https://example.net/path');assert.equal(p.map(x=>x.text).join(''),'Try https://example.com/a?q=1 and www.example.org then example.net/path.');});
+test('punctuation is preserved outside links; balanced path parentheses kept',()=>{const p=parts('(https://example.com/wiki/A_(B)).');assert.equal(p.find(x=>x.href).href,'https://example.com/wiki/A_(B)');assert.equal(p.map(x=>x.text).join(''),'(https://example.com/wiki/A_(B)).');});
+test('script/data schemes, email fragments and credential URLs stay non-clickable',()=>{for(const input of ['javascript:alert(1)','data:text/html,<script>alert(1)</script>','user@example.com','https://user:secret@example.com'])assert.equal(parts(input).filter(x=>x.href).length,0);});
+test('message HTML remains ordinary text, not HTML markup',()=>{const p=parts('<img src=x onerror=alert(1)> https://example.com');assert.equal(p[0].text,'<img src=x onerror=alert(1)> ');});

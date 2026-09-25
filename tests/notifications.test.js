@@ -1,21 +1,11 @@
 'use strict';
-const {test}=require('node:test');const assert=require('node:assert/strict');const vm=require('node:vm');const fs=require('node:fs');const path=require('node:path');
-function worker({fail=false,clients=[]}={}){
- const events={},shown=[],opened=[];
- const self={addEventListener:(name,handler)=>events[name]=handler,registration:{showNotification:async(title,opts)=>{if(fail)throw new Error('OS rejected notification');shown.push({title,...opts});}},clients:{matchAll:async()=>clients,openWindow:async u=>opened.push(u),claim:async()=>{}},skipWaiting:async()=>{}};
- vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/sw.js'),'utf8'),{self,caches:{keys:async()=>[],delete:async()=>{}}});return{events,shown,opened};
-}
-test('notification worker keeps event alive, associates exact tab and confirms success',async()=>{
- const w=worker();let promise,reply;w.events.message({data:{type:'show-notification',title:'Test',body:'Text',room:'ROOM A',tag:'test'},source:{id:'client-a'},ports:[{postMessage:d=>reply=d}],waitUntil:p=>promise=p});
- assert.ok(promise);await promise;assert.equal(reply.ok,true);assert.equal(w.shown[0].data.clientId,'client-a');assert.equal(w.shown[0].data.room,'ROOM A');assert.equal(w.shown[0].icon,'/icons/icon-192.png');
-});
-test('notification failure is returned, not reported as success',async()=>{
- const w=worker({fail:true});let promise,reply;w.events.message({data:{type:'show-notification'},ports:[{postMessage:d=>reply=d}],waitUntil:p=>promise=p});await promise;assert.equal(reply.ok,false);assert.match(reply.error,/rejected/);
-});
-test('click focuses originating tab, not first unrelated room',async()=>{
- let focused='',message;const w=worker({clients:[{id:'unrelated',focus:async()=>focused='wrong'},{id:'right',focus:async()=>focused='right',postMessage:m=>message=m}]});let promise;
- w.events.notificationclick({notification:{data:{clientId:'right',room:'ROOM'},close:()=>{}},waitUntil:p=>promise=p});await promise;assert.equal(focused,'right');assert.equal(message.type,'notification-click');assert.equal(w.opened.length,0);
-});
-test('when originating tab is closed, click opens an encoded room link without auto-joining',async()=>{
- const w=worker();let promise;w.events.notificationclick({notification:{data:{clientId:'gone',room:'A&B'},close:()=>{}},waitUntil:p=>promise=p});await promise;assert.equal(w.opened[0],'/?room=A%26B');
-});
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const create=require('../public/push-worker-core');
+function fixture(){const map=new Map(),shown=[],opened=[],windows=[];const registration={showNotification:async(t,o)=>shown.push({title:t,...o}),getNotifications:async()=>shown.map(n=>({...n,close(){n.closed=true;}}))};const core=create({store:{all:async()=>[...map.values()],put:async r=>map.set(r.id,r),remove:async id=>map.delete(id),clear:async()=>map.clear()},registration,clients:{matchAll:async()=>windows,openWindow:async url=>opened.push(url)},now:()=>1000});return{core,shown,opened,windows,registration,map};}
+const id='a'.repeat(64);const add={type:'binding-add',id,room:'ROOM',expiresAt:100000,previews:true};const payload={type:'room-message',bindings:[id],room:'ROOM',sentAt:1000,title:'Mira',body:'Hi there',eventId:'one'};
+test('push works without an open page, with approved sender name/text',async()=>{const f=fixture();await f.core.message(add,{id:'tab-a'});await f.core.push(payload);assert.equal(f.shown[0].title,'Mira');assert.equal(f.shown[0].body,'Hi there');assert.equal(f.shown[0].data.clientId,'tab-a');});
+test('Exit/offline local revocation suppresses queued notifications and closes displayed ones',async()=>{const f=fixture();await f.core.message(add,{id:'tab-a'});await f.core.push(payload);await f.core.message({type:'binding-remove',id},{id:'tab-a'});assert.equal(f.shown[0].closed,true);await f.core.push({...payload,eventId:'two'});assert.equal(f.shown.length,1);});
+test('cross-room and stale payloads are ignored; opt-out previews are masked',async()=>{const f=fixture();await f.core.message({...add,previews:false},{id:'tab'});await f.core.push({...payload,room:'OTHER'});await f.core.push({...payload,sentAt:-200000});assert.equal(f.shown.length,0);await f.core.push(payload);assert.equal(f.shown[0].title,'TempChat');assert.ok(!f.shown[0].body.includes('Hi there'));});
+test('notification click focuses only the originating tab still in that room',async()=>{const f=fixture();await f.core.message(add,{id:'tab-a'});let focused='',message;f.windows.push({id:'wrong',url:'https://example.test/?room=ROOM',focus:async()=>focused='wrong'},{id:'tab-a',url:'https://example.test/?room=ROOM',focus:async()=>focused='correct',postMessage:m=>message=m});await f.core.click({room:'ROOM',clientId:'tab-a',bindings:[id]});assert.equal(focused,'correct');assert.equal(message.type,'notification-click');assert.equal(f.opened.length,0);});
+test('closed or changed-room tab opens a room invite without automatically joining',async()=>{const f=fixture();await f.core.message(add,{id:'tab-a'});f.windows.push({id:'tab-a',url:'https://example.test/?room=DIFFERENT'});await f.core.click({room:'ROOM',clientId:'tab-a',bindings:[id]});assert.equal(f.opened[0],'/?room=ROOM');await f.core.message({type:'binding-remove',id},{id:'tab-a'});await f.core.click({room:'ROOM',clientId:'tab-a',bindings:[id]});assert.equal(f.opened.length,1);});
+test('platform failures are not reported as success',async()=>{const f=fixture();await f.core.message(add,{id:'tab'});f.registration.showNotification=async()=>{throw new Error('denied');};await assert.rejects(f.core.push(payload),/denied/);});

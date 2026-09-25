@@ -80,7 +80,7 @@ test('reset clears receipts and shared wallpaper', async () => {
 });
 test('existing calls relay media only to active participants; presence and typing still work', async () => {
   const a = await connect('CALLS','A'), b = await connect('CALLS','B'), watcher = await connect('CALLS','Watcher');
-  const presence = event(a,'presence-update', people => people.length === 3); a.emit('presence-heartbeat'); await presence;
+  const presence = event(a,'presence-update', people => people.length === 3); a.emit('presence-update','active'); await presence;
   const typing = event(b,'user-typing'); a.emit('typing'); assert.equal((await typing).username,'A');
   a.emit('call-start',{callType:'audio'}); b.emit('call-join',{callType:'audio'}); await wait(80);
   let leaked = false; watcher.on('audio-pcm', () => leaked = true);
@@ -107,3 +107,16 @@ test('reply summaries are bounded; view-once photos do not copy hidden image/cap
  const reset=event(a,'clear-chat');a.emit('reset-chat');await reset;
  const rejected=event(b,'message-rejected');b.emit('send-message',{message:'stale',replyTo:p.id});assert.ok((await rejected).error);
 });
+
+test('explicit Exit leaves only one member and never clears the other chat',async()=>{
+ const a=await connect('EXITROOM','A'),b=await connect('EXITROOM','B');
+ let clearCount=0;b.on('clear-chat',()=>clearCount++);
+ const original=await message(a,'Keep this message');
+ const leave=event(b,'system-message',d=>d.text==='A left the room.');
+ assert.equal((await ack(a,'leave-room',{})).ok,true);await leave;
+ const presence=event(b,'presence-update',p=>p.length===1);b.emit('presence-update','active');assert.equal((await presence)[0].username,'B');
+ let leaked=false;a.on('chat-message',()=>leaked=true);await message(b,'Still in the room');await wait(80);
+ assert.equal(leaked,false);assert.equal(clearCount,0);
+ const replied=event(b,'chat-message',d=>d.message==='Reply after A left');b.emit('send-message',{message:'Reply after A left',replyTo:original.id});assert.equal((await replied).reply.text,'Keep this message');
+});
+test('public push configuration is explicit and no VAPID private key is exposed',async()=>{const res=await fetch(base+'/api/push/config');assert.equal(res.status,200);const cfg=await res.json();assert.equal(typeof cfg.configured,'boolean');assert.equal(Object.hasOwn(cfg,'privateKey'),false);});

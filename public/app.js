@@ -414,6 +414,9 @@ function initApp() {
   const urlParams = new URLSearchParams(window.location.search);
   let roomFromUrl = urlParams.get("room") || urlParams.get("join");
 
+  if (!roomFromUrl && window.location.pathname.startsWith("/room/")) {
+    try { roomFromUrl = decodeURIComponent(window.location.pathname.slice(6)); } catch (_) {}
+  }
   if (!roomFromUrl && window.location.hash) {
     roomFromUrl = window.location.hash.replace("#", "").trim();
   }
@@ -498,6 +501,7 @@ function joinChat() {
 
   currentUsername = finalUsername.slice(0, 20);
   currentRoom = rawRoom.slice(0, 20);
+  history.replaceState(null, "", `/?room=${encodeURIComponent(currentRoom)}`);
 
   getSfxContext();
 
@@ -628,7 +632,7 @@ function appendChatMessage(data) {
   const name = document.createElement("strong");
   name.textContent = isOwn ? "You" : data.username;
   const text = document.createElement("span");
-  text.textContent = data.message;
+  window.TempChatLinks.fill(text, data.message);
   const time = document.createElement("small");
   time.textContent = data.time;
   bubble.appendChild(name);
@@ -652,7 +656,7 @@ function appendInCallMessage(data) {
   const strong = document.createElement("strong");
   strong.textContent = isOwn ? "You" : data.username;
   const span = document.createElement("span");
-  span.textContent = data.message;
+  window.TempChatLinks.fill(span, data.message);
   msgEl.appendChild(strong);
   msgEl.appendChild(span);
   callChatMessages.appendChild(msgEl);
@@ -911,7 +915,7 @@ function appendPhotoMessage(data) {
     if (data.caption) {
       const cap = document.createElement("span");
       cap.className = "view-once-caption-text";
-      cap.textContent = data.caption;
+      window.TempChatLinks.fill(cap, data.caption);
       details.appendChild(cap);
     }
 
@@ -937,7 +941,7 @@ function appendPhotoMessage(data) {
     bubble.appendChild(img);
     if (data.caption) {
       const cap = document.createElement("span");
-      cap.textContent = data.caption;
+      window.TempChatLinks.fill(cap, data.caption);
       bubble.appendChild(cap);
     }
     const time = document.createElement("small");
@@ -1028,7 +1032,7 @@ function openLightbox(imageUrl, caption) {
 ========================================= */
 
 function getRoomShareUrl() {
-  return `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(currentRoom)}`;
+  return `${window.location.origin}/?room=${encodeURIComponent(currentRoom)}`;
 }
 
 function openShareModal() {
@@ -1215,6 +1219,7 @@ async function startVoiceRecording() {
     return showToast("Microphone access was denied.");
   }
 
+  if (window.__tempChatExiting || !joinedChat) { stream.getTracks().forEach(t => t.stop()); return; }
   recordedChunks = [];
   recordSendOnStop = false;
   mediaRecorder = new MediaRecorder(stream);
@@ -1425,6 +1430,10 @@ async function initMediaHardware(callType) {
 
   const actualFacing = window.TempChatCamera.facingForTrack(localStream.getVideoTracks()[0]);
   if (actualFacing) currentFacingMode = actualFacing;
+  if (window.__tempChatExiting || !joinedChat) {
+    localStream?.getTracks().forEach(t => t.stop()); localStream = null;
+    throw new DOMException("Room exited", "AbortError");
+  }
   isMicMuted = false;
   isCameraOff = currentCallType === "audio";
   return localStream;
@@ -2557,6 +2566,7 @@ socket.on("disconnect", () => {
       return showToast("Could not start screen sharing.");
     }
 
+    if (window.__tempChatExiting || !inCall) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; return; }
     cameraStreamBackup = localStream;
     window.__isScreenSharing = true;
     isCameraOff = false;
@@ -2869,10 +2879,10 @@ socket.on("disconnect", () => {
       section("📷", "Direct Camera", "The <strong>📷</strong> button opens a real in-app camera with a live preview, shutter and front/back flip — it no longer opens your file manager. Use <strong>🖼️</strong> to pick an existing photo instead.") +
       section("①", "View-Once Photos", "Photos marked view-once self-destruct after being opened and are wiped from memory. The sender is told the moment you open one.") +
       section("🎙️", "Voice Notes", "Hold or tap the mic in the composer to record up to 60 seconds, with a scrubbable waveform.") +
-      section("🔔", "Notifications", "Open <strong>⋯ → Notification settings &amp; test</strong>. Permission is per device and site address. Mobile alerts depend on your browser staying active; closed or suspended apps do not receive messages without a Web Push backend.") +
+      section("🔔", "Notifications", "Open <strong>⋯ → Phone notifications</strong>. Permission is per device and site address. Enable Background notifications to request browser permission. With the server push keys configured, supported phones can receive sender names and text while the page is closed. Subscriptions last 24 hours; temporary server memory is lost on restart.") +
       section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +
       section("🔴", "Reset Room", "Wipes the whole room's chat for everyone, instantly.") +
-      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens.");
+      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens. Push opt-in stores subscription metadata, and notification previews may remain on the phone.");
 
     function section(icon, title, text) {
       return '<div class="guide-section-item"><h5>' + icon + " " + title + "</h5><p>" + text + "</p></div>";
@@ -3541,6 +3551,7 @@ socket.on("disconnect", () => {
       return showToast("Could not start screen sharing.");
     }
 
+    if (window.__tempChatExiting || !inCall) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; return; }
     cameraStreamBackup = localStream;
     window.__isScreenSharing = true;
     isCameraOff = false;
@@ -3934,10 +3945,10 @@ socket.on("disconnect", () => {
       section("📷", "Direct Camera", "The <strong>📷</strong> button opens a real in-app camera with a live preview, shutter and front/back flip — it no longer opens your file manager. Use <strong>🖼️</strong> to pick an existing photo instead.") +
       section("①", "View-Once Photos", "Photos marked view-once self-destruct after being opened and are wiped from memory. The sender is told the moment you open one.") +
       section("🎙️", "Voice Notes", "Hold or tap the mic in the composer to record up to 60 seconds, with a scrubbable waveform.") +
-      section("🔔", "Notifications", "Open <strong>⋯ → Notification settings &amp; test</strong>. Permission is per device and site address. Mobile alerts depend on your browser staying active; closed or suspended apps do not receive messages without a Web Push backend.") +
+      section("🔔", "Notifications", "Open <strong>⋯ → Phone notifications</strong>. Permission is per device and site address. Enable Background notifications to request browser permission. With the server push keys configured, supported phones can receive sender names and text while the page is closed. Subscriptions last 24 hours; temporary server memory is lost on restart.") +
       section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +
       section("🔴", "Reset Room", "Wipes the whole room's chat for everyone, instantly.") +
-      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens.");
+      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens. Push opt-in stores subscription metadata, and notification previews may remain on the phone.");
 
     function section(icon, title, text) {
       return '<div class="guide-section-item"><h5>' + icon + " " + title + "</h5><p>" + text + "</p></div>";
