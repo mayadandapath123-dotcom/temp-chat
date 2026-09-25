@@ -1,55 +1,62 @@
 'use strict';
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory;
-  else root.TempChatPushCore = factory;
-})(typeof self !== 'undefined' ? self : globalThis, function ({ store, registration, clients, now = Date.now }) {
-  const validId = id => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id);
-  async function liveBindings() {
-    const all = await store.all();
-    for (const r of all) if (r.expiresAt <= now()) await store.remove(r.id);
-    return all.filter(r => r.expiresAt > now());
+  else root.TempChatSessionNotificationCore = factory;
+})(typeof self !== 'undefined' ? self : globalThis, function ({ registration, clients, confirmSession }) {
+  const states = new Map();
+  function state(id) {
+    if (!states.has(id)) states.set(id, { revision: 0, stopped: new Set() });
+    while (states.size > 256) states.delete(states.keys().next().value);
+    return states.get(id);
   }
-  async function closeMatching(id) {
-    for (const n of await registration.getNotifications()) if (!id || n.data?.bindings?.includes(id)) n.close();
+  async function closeFor(clientId, epoch) {
+    for (const n of await registration.getNotifications()) {
+      if (n.data?.clientId === clientId && (!epoch || n.data?.epoch === epoch)) n.close();
+    }
+  }
+  async function isEligible(clientId, msg) {
+    const live = await clients.get(clientId);
+    if (!live || live.type !== 'window') return false;
+    const check = await confirmSession(live, msg.epoch, msg.room);
+    return Boolean(check && check.joined && check.connected && check.enabled && check.epoch === msg.epoch && check.room === msg.room && (msg.test || !check.foreground));
   }
   async function message(msg, source) {
-    if (msg.type === 'push-status') return { ok: true, version: 7 };
-    if (msg.type === 'binding-add') {
-      if (!source?.id || !validId(msg.id) || typeof msg.room !== 'string' || msg.room.length > 24 || !Number.isFinite(msg.expiresAt) || msg.expiresAt <= now()) throw new Error('Invalid local notification session.');
-      await liveBindings();
-      await store.put({ id: msg.id, room: msg.room, clientId: source.id, expiresAt: Math.min(msg.expiresAt, now() + 86400000), previews: msg.previews !== false });
-    } else if (msg.type === 'binding-remove') {
-      if (validId(msg.id)) { await store.remove(msg.id); await closeMatching(msg.id); }
-    } else if (msg.type === 'bindings-clear') {
-      await store.clear(); await closeMatching();
-      for (const c of await clients.matchAll({ type: 'window', includeUncontrolled: true })) c.postMessage({ type: 'push-disabled' });
-    } else throw new Error('Unsupported notification operation.');
-    return { ok: true };
-  }
-  async function push(data) {
-    if (!data || data.type !== 'room-message' || !Array.isArray(data.bindings) || typeof data.room !== 'string' || !Number.isFinite(data.sentAt) || now() - data.sentAt > 120000 || data.sentAt > now() + 60000) return;
-    const bindings = (await liveBindings()).filter(r => r.room === data.room && r.expiresAt > now() && data.bindings.includes(r.id));
-    if (!bindings.length) return; // explicit Exit/Off suppresses queued message content, even offline
-    const preview = bindings.some(b => b.previews);
-    const title = data.test || preview ? String(data.title || 'TempChat').slice(0, 120) : 'TempChat';
-    const body = data.test || preview ? String(data.body || '').slice(0, 1800) : 'New activity in your room. Tap to open.';
-    await registration.showNotification(title, {
-      body, tag: `tempchat-room-${data.room}`, renotify: true,
+    if (msg.type === 'session-status') return { ok: true, version: 8, mode: 'joined-page-only' };
+    if (!source?.id) return { error: 'A live chat page is required.' };
+    const s = state(source.id);
+    if (msg.type === 'session-stop') {
+      s.revision++; if (typeof msg.epoch === 'string') s.stopped.add(msg.epoch);
+      while (s.stopped.size > 32) s.stopped.delete(s.stopped.values().next().value);
+      await closeFor(source.id); return { ok: true };
+    }
+    if (msg.type === 'session-close-alerts') { await closeFor(source.id); return { ok: true }; }
+    if (msg.type !== 'session-notify') return { error: 'This old notification mode is disabled. Reopen TempChat.' };
+    if (typeof msg.epoch !== 'string' || msg.epoch.length > 100 || typeof msg.room !== 'string' || !msg.room || msg.room.length > 24) return { error: 'Invalid room session.' };
+    const revision = s.revision;
+    if (s.stopped.has(msg.epoch) || !await isEligible(source.id, msg)) return { ok: true, shown: false };
+    if (s.revision !== revision || s.stopped.has(msg.epoch)) return { ok: true, shown: false };
+    await registration.showNotification(String(msg.title || 'TempChat').slice(0, 120), {
+      body: String(msg.body || '').slice(0, 1500),
+      tag: `tempchat-session-${source.id}`, renotify: true,
       icon: '/icons/icon-192.png', badge: '/icons/badge-96.png', vibrate: [150, 60, 150],
-      data: { room: data.room, clientId: bindings[0].clientId, bindings: bindings.map(b => b.id), eventId: data.eventId },
+      data: { clientId: source.id, room: msg.room, epoch: msg.epoch },
     });
+    // Exit may race a slow OS notification request. Close a late completion.
+    if (s.revision !== revision || !await isEligible(source.id, msg)) {
+      await closeFor(source.id, msg.epoch); return { ok: true, shown: false };
+    }
+    return { ok: true, shown: true };
   }
   async function click(data) {
-    const valid = (await liveBindings()).some(r => r.room === data.room && r.expiresAt > now() && data.bindings?.includes(r.id));
-    if (!valid) return;
-    const room = String(data.room || '').slice(0, 24);
-    const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const exact = windows.find(c => {
-      if (c.id !== data.clientId) return false;
-      try { const u = new URL(c.url); return u.searchParams.get('room') === room || (u.pathname.startsWith('/room/') && decodeURIComponent(u.pathname.slice(6)) === room); } catch (_) { return false; }
-    });
-    if (exact) { await exact.focus(); exact.postMessage({ type: 'notification-click', room }); }
-    else await clients.openWindow('/?room=' + encodeURIComponent(room));
+    if (!data || typeof data !== 'object') return;
+    const s = state(data.clientId);
+    if (!data?.epoch || s.stopped.has(data.epoch)) return;
+    const client = await clients.get(data.clientId);
+    if (!client) return;
+    const check = await confirmSession(client, data.epoch, data.room);
+    if (!check?.joined || !check.connected || check.epoch !== data.epoch || check.room !== data.room) return;
+    await client.focus(); client.postMessage({ type: 'notification-click', room: data.room });
+    // Never opens a closed/exited room in a fresh tab.
   }
-  return { message, push, click };
+  return { message, click, push: async () => false };
 });

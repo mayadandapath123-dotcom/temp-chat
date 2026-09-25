@@ -1,50 +1,53 @@
-# TempChat v7 — testing and limitations
+# TempChat v8 — joined-page notification fix
 
-Base: GitHub main `7ec0b253`.
+Base: GitHub main `3a66de09`.
 
-## Automated tests
+## Automated tests: 44 passed
 
-**46 tests passed** covering:
-- All retained camera-flip, zoom, reply, receipt, room-isolation, media and theme behavior.
-- Only-self Exit: membership/call removal without clear-chat, remaining user's messages/quotes intact.
-- Safe HTTP(S)/www/domain link parsing; punctuation preservation; no JS/data/credential/email-fragment link conversion; literal HTML remains text.
-- Push registration validity, HTTPS provider allowlist, cryptographic subscription-key shape, private-key/config separation.
-- Room-scoped sender/title/body dispatch after a socket closes, no self/foreground duplicates, endpoint deduplication, preview opt-out.
-- Explicit Exit revocation, device-wide off on the same endpoint without affecting other devices, expired/provider-gone subscription cleanup, room reset.
-- Optional subscription-only file store reload after restart; session auth tokens are hashed and no chat message text is persisted there.
-- Foreground heartbeat expiry for OS-suspended clients.
-- Worker-approved binding delivery with no open page, local revocation of queued content, notification cleanup, stale/cross-room rejection, preview masking, safe click routing and platform-error reporting.
+Includes all retained room, receipt, reply, theme, safe URL, Exit, camera and zoom checks, plus:
 
-Push transport and operating-system notification APIs in unit tests are mocked. They prove code behavior, not live Google/Apple/Mozilla delivery to an actual phone.
+- Joined/connected background pages can notify; foreground pages suppress ordinary alerts.
+- Explicit test notification is allowed only from a valid joined session.
+- Exited, disconnected, disabled, wrong-room or wrong-generation requests cannot notify.
+- A closed or unresponsive/suspended page cannot authorize a queued notification.
+- Exit closes shown notifications and rejects its queued old generation.
+- A delayed OS show completion that races with Exit is closed.
+- A new real join can notify after the old session ends.
+- Old alert clicks only focus a still-joined original page, never reopen an exited/closed room.
+- All legacy remote Web Push payloads are ignored.
+- Provider push stays disabled even when old keys/storage variables are supplied.
+- Old clients cannot create subscriptions or trigger push tests; the `web-push` dependency is absent.
 
-The deployment installer also passed a separate-HOME dry-run: it cloned the correct base, backed up source, copied the explicit release file list and passed the tests without committing or pushing. Syntax checks and `git diff --check` passed. Dependency audit reported zero known vulnerabilities at packaging.
+Unit tests simulate platform notification APIs; they do not prove a physical phone displayed an alert.
+
+The installer also passed a separate-HOME dry-run: it cloned the verified base, backed up the source, copied the explicit release files and passed all tests without committing or pushing. Syntax/shell checks and `git diff --check` passed; dependency audit reported zero known vulnerabilities.
 
 ## Browser smoke test
 
-Chromium with a touch-capable 390×844 viewport and another browser context:
-- Direct `/room/NEWROOM` and `/?room=NEWROOM` invitations load the full app with prefilled room.
-- Three URL formats render as safe new-tab anchors; HTML-looking message content does not become an image/script.
-- ON requests browser permission exactly once (mock permission/PushManager because the sandbox cannot provide a real phone subscription).
-- The actual service worker and actual IndexedDB binding protocol are exercised. A test-only server mocks provider network transport; no external push provider is contacted.
-- The server test acknowledgement and notification UI display correctly.
-- Exit during a simulated video call returns to the clean join page, removes only that member, preserves the other browser's chat and removes the exiting session's local push binding.
-- No uncaught JavaScript errors or horizontal page overflow in the smoke run.
+Chromium with a 390×844 touch viewport and a separate sender context. Only the browser permission result and OS notification tray API were mocked; the app, Socket.IO server, real service worker and live-page MessageChannel verification ran normally.
 
-A test acceptance from the provider is not confirmation that a notification appeared on the phone. No actual-device push delivery or authenticated production deployment has been performed here.
+Passed:
+- One user permission request when enabling alerts.
+- Legacy browser Push unsubscribe attempted; `PushManager.subscribe` never called.
+- Explicit test shows through the live worker/page handshake.
+- Foreground new message does not create a system alert.
+- A still-joined background page creates a sender-name/text alert.
+- Disconnect pauses alerts; an actual room reconnection can resume them.
+- Exit returns to Join, preserves the other participant, closes that session's alerts, and prevents fresh alerts after leaving.
+- Closing the page prevents an explicitly queued old-epoch notification request from showing.
+- Legacy server Push payloads are ignored.
+- No uncaught browser page errors in the completed run.
 
-## Phone acceptance checklist (after VAPID setup)
+## Real-device checklist
 
-1. Open the current Render URL, join the same room on two devices, and switch Phone notifications ON. Confirm the browser permission prompt and the final ON status.
-2. On iPhone/iPad use iOS/iPadOS 16.4+ and the installed Home Screen web app. On Android allow both site/browser and OS notifications.
-3. Send background test. Check the notification shade. If missing, inspect site permission, OS notification settings, DND, battery restrictions and server key/config status.
-4. Put one phone in the background, then send text from the other. Verify sender name and preview. Try closing the receiving page, then send again while the server still retains its registration.
-5. Untick name/text previews and verify generic alerts. Photos/voice notes should only produce labels, not leaked media/captions.
-6. Tap an alert: it should focus the relevant tab or open its room invite, not auto-join or activate camera/mic.
-7. Explicitly Exit on one device. It should return to Join with media off, and the other device should remain in the room with its messages intact. The exited tab's push binding should no longer display new content.
-8. In another opted-in tab/session, alerts may still continue; use Turn off on this device to disable all browser/device push bindings. Permission itself remains in browser settings.
-9. Test a text URL, www URL, bare domain and both room-invite formats. Links should open only when tapped, in a new tab.
-10. Verify replies, themes, photo-camera zoom/flip and a short call still work. Keep video tests short to conserve Render bandwidth.
+After deploying, close all older TempChat tabs/windows, reopen the current URL, join the same room on two devices and enable Joined-room notifications:
 
-### Restart/storage caveat
+1. While viewing the chat, new messages appear normally without redundant system alerts.
+2. Switch to a different tab/app without exiting the room. Send a message from the other device; an alert should appear if the browser remains running and connected.
+3. Press Exit and send another message. There must be no new alert from the exited session.
+4. Join again, then close that page/browser. New messages must not create new alerts from that closed session.
+5. Turn notifications off and verify no new alerts. Turn them on again while joined and use Send test notification.
+6. Try losing network: alerts must pause until the room actually reconnects.
+7. Confirm replies, call/camera zoom/flip, links, themes and other members' chat are unaffected.
 
-Without `PUSH_STORE_PATH` on truly persistent storage, server restarts/redeploys/free-service sleep can lose subscriptions. Reopen/rejoin to reconnect alerts. The optional persistent-file test does not turn Render's ephemeral filesystem into a persistent disk. No paid plan/storage is provisioned automatically.
+A fully suspended browser can stop session-only alerts even if its tab remains listed. This is the intentional trade-off for removing closed-page/offline notifications. Browser permissions, DND and OS history remain outside the app's control. A separate still-joined tab or a different old TempChat domain is a separate source of alerts.

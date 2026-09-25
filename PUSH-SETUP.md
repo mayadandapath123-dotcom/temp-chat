@@ -1,118 +1,44 @@
-# One-time setup: real phone Web Push
+# Server Web Push was removed — no key setup needed
 
-This version implements Web Push, not merely local notifications from an open webpage. On supported devices it can receive encrypted alert payloads through the browser push service while the page is closed, provided the server retains the subscription and the operating system allows delivery.
+This file replaces the previous v7 setup instructions. **Do not generate or add VAPID keys for this version.**
 
-Your active site: https://temp-chat-5yum.onrender.com/
+## New behavior
 
-## 1. Install/deploy the new release
+Notifications are created only by a running TempChat page that is:
+- joined to a room;
+- connected to the room server;
+- allowed to show notifications; and
+- in a background tab/app (except when you deliberately send a test notification).
 
-Use the included `deploy-existing.sh` (see UPDATE-GUIDE.md). It installs the `web-push` dependency and the key generator in your existing project. You must use this new release, not an older ZIP.
+The service worker asks the actual page to verify its session before showing an alert. A closed, exited, disconnected or unresponsive page cannot authorize a new notification. The worker does not open a new room when an old notification is clicked after that session ends.
 
-## 2. Generate keys ON YOUR LAPTOP, once
+**No server Web Push, offline delivery, durable notification registry or 24-hour subscription remains.** This is intentionally different from v7.
 
-```bash
-cd ~/Documents/Projects/temp-chat
-read -rp "Your real contact email: " PUSH_EMAIL
-node scripts/generate-push-keys.js "mailto:$PUSH_EMAIL"
-cat push-keys.env
-```
+## After deploying
 
-This creates `push-keys.env` with restrictive file permissions and three entries:
+1. Close all older TempChat tabs and Home Screen app windows on each device.
+2. Reopen **https://temp-chat-5yum.onrender.com/** using the new version.
+3. The update tries to unsubscribe the old browser Push subscription, clears the old local subscription-permission database and closes old application notifications. The new server never loads the old registry or sends provider push requests.
+4. Join a room, open **⋯ → Joined-room notifications**, and switch notifications on. If the browser already granted permission, it may not ask again.
+5. Switch to another tab/app without pressing Exit or closing TempChat, then send a message from another device.
+6. Press Exit or close the TempChat page and send another message: no new session alerts should be created.
 
-```text
-VAPID_PUBLIC_KEY=...
-VAPID_PRIVATE_KEY=...
-VAPID_SUBJECT=mailto:your-contact-email
-```
+The remembered setting is only a notification preference—not persistent room membership. A later explicit join can use that preference again. Merely opening the join screen cannot produce room alerts.
 
-**Do not paste the private key here in chat, upload this file, or commit it to Git.** The release's `.gitignore` excludes it. The public key is intentionally public; the private key must remain secret. The contact email is the developer/operator's contact, not a Gmail password or an email-sending credential.
+## Old keys and storage
 
-If the script says the file already exists, keep it and read it with `cat push-keys.env`. Do not regenerate working keys for every deployment. Key changes invalidate existing browser subscriptions.
+Your existing Render `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` and `PUSH_STORE_PATH` variables are ignored. You may remove them from **TempChat's service only**. Do not change the typing website's settings.
 
-## 3. Put the three values into the TEMPCHAT Render service
+The old private `push-keys.env` file is not needed, but this update does not delete it automatically. Keep it private or remove it yourself when you are sure nothing else uses it. The key-generator command now only explains that it has been retired; it does not generate or overwrite keys.
 
-Render → your active **TempChat** web service → **Environment** → add:
+If you configured an optional persistent subscription file, this version never reads or writes it. You can securely delete that dedicated subscription file when no longer needed. Do not delete unrelated databases/disks or change paid storage without checking what else uses it.
 
-| Key | Value |
-|---|---|
-| `VAPID_PUBLIC_KEY` | The generated public-key value |
-| `VAPID_PRIVATE_KEY` | The generated private-key value |
-| `VAPID_SUBJECT` | The generated `mailto:...` value |
+## Limitations
 
-Copy only each value, not the `KEY=` part. Save and redeploy/restart as Render prompts. Do not change the typing website's environment or database. These are not Render API keys and require no third-party paid push account.
+- If the phone fully suspends or kills the browser, the page may stop receiving messages or replying to the worker's session check; alerts then stop. That is the intended trade-off for **no closed-page alerts**.
+- Browser/site permission, OS notification settings, Do Not Disturb and battery restrictions still apply. This release does not call `PushManager.subscribe`, so the old push-service-registration error is no longer part of its notification setup.
+- Previously delivered notifications can remain in OS history; the website cannot guarantee erasing phone history. The update tries to close notifications it controls.
+- Another tab that is still joined can receive alerts for its own session. Exit/close every joined tab if you want no room alerts at all, or turn notifications off in settings.
+- An old TempChat deployment on another domain is a separate site. If alerts continue from an old address, disable its notification permission or retire that old service. Updating `temp-chat-5yum.onrender.com` does not change another origin's browser permissions.
 
-Confirm the deployed app is v7 and `/api/push/config` shows `"configured": true`. That endpoint exposes only the public key/configuration status, never the private key. The settings panel also reports missing/invalid setup.
-
-## 4. Enable on each phone
-
-1. Open the new TempChat address and join a room.
-2. Open **⋯ → Phone notifications**.
-3. Switch **Background notifications ON**.
-4. Tap **Allow** on the browser permission prompt.
-5. Wait for **Web Push is ON for this room**.
-6. Tap **Send background test** and check the phone's notification shade.
-7. Put the app in the background or close its page, then have another participant send a message in the same room.
-
-By default, alerts display the sender's name and a text preview. The settings panel explicitly warns that names and text can appear on the lock screen. Untick the preview setting for generic alerts. Photos and voice notes use labels only, never image bytes or view-once photo captions. Long text is truncated to fit the push payload.
-
-### Android
-
-Use a Web Push-capable browser such as Chrome. Allow the site's notifications and the browser's notifications in Android Settings. Battery optimizations, Do Not Disturb, force-stopping the browser, network loss, and device policies can delay or block delivery.
-
-### iPhone/iPad
-
-Requires iOS/iPadOS 16.4+ and the **Home Screen web app**: in Safari, Share → Add to Home Screen, then launch that icon. Join your room and switch notifications on inside the installed app. A normal Safari tab is not a substitute for this flow.
-
-No website can override denied system permissions, DND, or a force-stopped browser. Provider acceptance of a test is not proof that the OS displayed it. Actual delivery must be checked on the device.
-
-## 5. Understand temporary versus durable subscriptions
-
-### Default: no database, memory-only server registry
-
-This works without provisioning paid storage. Registrations last **up to 24 hours** and are renewed when the same session reopens/reconnects. **A server restart, deployment or free-service sleep/restart can lose the registry.** The browser permission/subscription alone is not enough to reconstruct which room to notify: open TempChat and rejoin to register again.
-
-This is a real implementation limitation, not something VAPID keys fix. For restart-resistant delivery, configure a durable registry.
-
-### Optional: persistent disk, single server instance
-
-The code supports a subscription-only JSON registry on an explicitly provisioned persistent disk. Render persistent disks require a compatible paid service—**this release does not upgrade your plan or provision anything paid automatically**.
-
-If you choose that option:
-1. Attach a persistent disk to the TempChat service with mount path `/var/data`.
-2. Add `PUSH_STORE_PATH=/var/data/tempchat-push-subscriptions.json` in that service's Environment.
-3. Save/redeploy.
-4. The app settings should report that subscriptions survive restarts. If storage is unavailable it displays a warning.
-
-The file stores room membership, expiry, hashed session identifiers, subscription endpoints and encryption/auth keys—not chat history. Treat it as sensitive. Do not put it in `public/`, a Git repo, or a shared/downloadable directory. A path on Render's ordinary ephemeral filesystem does NOT become persistent just because this variable is set. This implementation is for a single server instance, not multi-instance shared storage.
-
-A shared durable database/service would be another implementation option if you later need multiple instances. None is configured by this ZIP.
-
-## Exit, closing tabs and privacy
-
-- **Exit Room** explicitly revokes this tab/session's alerts, clears its local message view, stops media and returns to the join screen. Other participants are unaffected.
-- Simply closing a tab intentionally keeps its notification registration for up to 24 hours. That allows closed-page alerts. Multiple tabs are separate sessions; other opted-in sessions can still receive alerts.
-- **Turn off on this device** clears the browser's bindings and unsubscribes it from Push. It does not erase other devices' chat.
-- Reset Chat revokes the room's server push bindings. Live participants must enable alerts again if desired.
-- Browser-local binding records suppress queued content after that binding is removed. Already delivered notifications, screenshots or OS notification history cannot be recalled reliably; phones control their retention.
-- Clicking an alert focuses its originating tab if still in that room, otherwise opens a prefilled room invite. It never auto-joins, turns on a mic/camera, or restores lost message history.
-- Message content is encrypted for delivery to the browser push service by the Web Push protocol, but TempChat's chat itself remains server-relayed, not end-to-end encrypted between participants. Apple/Google/Mozilla/Microsoft push infrastructure is involved in transport and can see delivery metadata.
-
-## Local testing with your existing keys
-
-Keys are not loaded implicitly from the file by `server.js`. For a local test:
-
-```bash
-cd ~/Documents/Projects/temp-chat
-set -a
-. ./push-keys.env
-set +a
-npm start
-```
-
-Second terminal:
-
-```bash
-cloudflared tunnel --url http://localhost:3000
-```
-
-Use the generated HTTPS address. Permissions/subscriptions are per origin, so a different tunnel hostname or a new Render URL needs a new opt-in. Keep the server/tunnel running while testing. Do not publish the key file.
+No background push keys or extra Render setup are required for this mode.

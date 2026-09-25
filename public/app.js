@@ -615,7 +615,7 @@ socket.on("chat-message", (data) => {
   appendInCallMessage(data);
 
   if (data.senderId ? data.senderId !== socket.id : data.username !== currentUsername) {
-    notifyUser(data.username, data.message);
+    notifyUser(data.username, data.message, { room: data.room });
     if (inCall && !isCallChatOpen) {
       showInCallHeadsUp(data.username, data.message);
     }
@@ -871,7 +871,7 @@ socket.on("single-photo", (data) => {
   appendPhotoMessage(data);
 
   if (data.senderId ? data.senderId !== socket.id : data.username !== currentUsername) {
-    notifyUser(data.username, "Sent a View-Once Photo 📷");
+    notifyUser(data.username, data.isViewOnce ? "Sent a View-Once Photo 📷" : "Sent a Photo 📷", { room: data.room });
   }
 });
 
@@ -1126,7 +1126,7 @@ socket.on("voice-message", (data) => {
   if (data && data.audio) {
     appendVoiceMessage(data);
     if (data.senderId ? data.senderId !== socket.id : data.username !== currentUsername) {
-      notifyUser(data.username, "Sent a voice note 🎙️");
+      notifyUser(data.username, "Sent a voice note 🎙️", { room: data.room });
     }
   }
 });
@@ -1340,7 +1340,7 @@ async function startCall(callType) {
   }
 }
 
-socket.on("call-start", ({ by, id, callType }) => {
+socket.on("call-start", ({ by, id, callType, room }) => {
   if (inCall) return;
   incomingCallData = { by, id, callType };
   if (incomingName) incomingName.textContent = by;
@@ -1354,7 +1354,7 @@ socket.on("call-start", ({ by, id, callType }) => {
   if (incomingCall) incomingCall.classList.remove("hidden");
 
   playSfx("ring");
-  notifyUser(by, `Incoming ${callType === "video" ? "Video" : "Voice"} Call in Room #${currentRoom}`);
+  notifyUser(by, `Incoming ${callType === "video" ? "Video" : "Voice"} Call in Room #${currentRoom}`, { room });
 
   if (navigator.vibrate) {
     navigator.vibrate([200, 100, 200, 100, 300]);
@@ -2190,12 +2190,13 @@ socket.on("disconnect", () => {
   --------------------------------------------------------------- */
   // Centralized service-worker notifications; no duplicate registrations.
   async function askNotificationPermission() { return window.TempChatNotifications.enable(); }
-  async function showSystemNotification(title, body, opts) { return window.TempChatNotifications.show(title, body, { ...opts, room: currentRoom }); }
+  async function showSystemNotification(title, body, opts) { return window.TempChatNotifications.show(title, body, { ...opts, room: opts?.room || currentRoom }); }
   notifyUser = function (title, body, opts) {
+    if (!joinedChat || window.__tempChatExiting) return;
     try { playSfx("receive"); } catch (_) {}
     if (document.hidden || !document.hasFocus()) {
       try { unreadCount++; startTitleFlashing(); } catch (_) {}
-      window.TempChatNotifications.show(title, body, { ...opts, room: currentRoom }).catch(() => {});
+      window.TempChatNotifications.show(title, body, { ...opts, room: opts?.room || currentRoom }).catch(() => {});
     }
   };
 
@@ -2879,10 +2880,10 @@ socket.on("disconnect", () => {
       section("📷", "Direct Camera", "The <strong>📷</strong> button opens a real in-app camera with a live preview, shutter and front/back flip — it no longer opens your file manager. Use <strong>🖼️</strong> to pick an existing photo instead.") +
       section("①", "View-Once Photos", "Photos marked view-once self-destruct after being opened and are wiped from memory. The sender is told the moment you open one.") +
       section("🎙️", "Voice Notes", "Hold or tap the mic in the composer to record up to 60 seconds, with a scrubbable waveform.") +
-      section("🔔", "Notifications", "Open <strong>⋯ → Phone notifications</strong>. Permission is per device and site address. Enable Background notifications to request browser permission. With the server push keys configured, supported phones can receive sender names and text while the page is closed. Subscriptions last 24 hours; temporary server memory is lost on restart.") +
+      section("🔔", "Notifications", "Open <strong>⋯ → Joined-room notifications</strong>. Permission is per device and site address. Enable joined-room notifications to request browser permission. Alerts only work while this chat page stays joined, connected and running in a background tab/app. Exit, close or disconnect to stop them. A fully suspended browser may not deliver alerts. No server Web Push is used.") +
       section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +
       section("🔴", "Reset Room", "Wipes the whole room's chat for everyone, instantly.") +
-      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens. Push opt-in stores subscription metadata, and notification previews may remain on the phone.");
+      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens. Notifications only come from live joined pages; previews already shown may remain in phone notification history.");
 
     function section(icon, title, text) {
       return '<div class="guide-section-item"><h5>' + icon + " " + title + "</h5><p>" + text + "</p></div>";
@@ -2963,12 +2964,13 @@ socket.on("disconnect", () => {
   --------------------------------------------------------------- */
   // Centralized service-worker notifications; no duplicate registrations.
   async function askNotificationPermission() { return window.TempChatNotifications.enable(); }
-  async function showSystemNotification(title, body, opts) { return window.TempChatNotifications.show(title, body, { ...opts, room: currentRoom }); }
+  async function showSystemNotification(title, body, opts) { return window.TempChatNotifications.show(title, body, { ...opts, room: opts?.room || currentRoom }); }
   notifyUser = function (title, body, opts) {
+    if (!joinedChat || window.__tempChatExiting) return;
     try { playSfx("receive"); } catch (_) {}
     if (document.hidden || !document.hasFocus()) {
       try { unreadCount++; startTitleFlashing(); } catch (_) {}
-      window.TempChatNotifications.show(title, body, { ...opts, room: currentRoom }).catch(() => {});
+      window.TempChatNotifications.show(title, body, { ...opts, room: opts?.room || currentRoom }).catch(() => {});
     }
   };
 
@@ -3945,10 +3947,10 @@ socket.on("disconnect", () => {
       section("📷", "Direct Camera", "The <strong>📷</strong> button opens a real in-app camera with a live preview, shutter and front/back flip — it no longer opens your file manager. Use <strong>🖼️</strong> to pick an existing photo instead.") +
       section("①", "View-Once Photos", "Photos marked view-once self-destruct after being opened and are wiped from memory. The sender is told the moment you open one.") +
       section("🎙️", "Voice Notes", "Hold or tap the mic in the composer to record up to 60 seconds, with a scrubbable waveform.") +
-      section("🔔", "Notifications", "Open <strong>⋯ → Phone notifications</strong>. Permission is per device and site address. Enable Background notifications to request browser permission. With the server push keys configured, supported phones can receive sender names and text while the page is closed. Subscriptions last 24 hours; temporary server memory is lost on restart.") +
+      section("🔔", "Notifications", "Open <strong>⋯ → Joined-room notifications</strong>. Permission is per device and site address. Enable joined-room notifications to request browser permission. Alerts only work while this chat page stays joined, connected and running in a background tab/app. Exit, close or disconnect to stop them. A fully suspended browser may not deliver alerts. No server Web Push is used.") +
       section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +
       section("🔴", "Reset Room", "Wipes the whole room's chat for everyone, instantly.") +
-      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens. Push opt-in stores subscription metadata, and notification previews may remain on the phone.");
+      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens. Notifications only come from live joined pages; previews already shown may remain in phone notification history.");
 
     function section(icon, title, text) {
       return '<div class="guide-section-item"><h5>' + icon + " " + title + "</h5><p>" + text + "</p></div>";

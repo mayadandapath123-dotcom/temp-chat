@@ -200,7 +200,7 @@ io.on("connection", (socket) => {
       return;
     }
     io.to(socket.room).emit("chat-message", {
-      id, clientId, ...features.record(socket, id, { kind: "text", text: message }), reply: quote.value, username: socket.username, message,
+      id, clientId, room: socket.room, ...features.record(socket, id, { kind: "text", text: message }), reply: quote.value, username: socket.username, message,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
     pushService.notify(socket, { id, title: socket.username, body: message });
@@ -212,7 +212,7 @@ io.on("connection", (socket) => {
     if (!socket.room || !socket.username || !data || !data.audio) return;
     const id = "vn_" + randomUUID();
     io.to(socket.room).emit("voice-message", {
-      id, ...features.record(socket, id, { kind: "voice", text: "Voice note" }),
+      id, room: socket.room, ...features.record(socket, id, { kind: "voice", text: "Voice note" }),
       username: socket.username,
       audio: data.audio,
       mime: data.mime || "audio/webm",
@@ -226,7 +226,7 @@ io.on("connection", (socket) => {
     if (!socket.room || !socket.username || !data || !data.image) return;
     const id = "photo_" + randomUUID();
     io.to(socket.room).emit("single-photo", {
-      id, ...features.record(socket, id, { kind: "photo", text: data.isViewOnce !== false ? "View-once photo" : "Photo" }),
+      id, room: socket.room, ...features.record(socket, id, { kind: "photo", text: data.isViewOnce !== false ? "View-once photo" : "Photo" }),
       username: socket.username,
       image: data.image,
       caption: String(data.caption || "").slice(0, 200),
@@ -272,6 +272,7 @@ io.on("connection", (socket) => {
 
     socket.to(socket.room).emit("call-start", {
       by: socket.username,
+      room: socket.room,
       id: socket.id,
       callType,
     });
