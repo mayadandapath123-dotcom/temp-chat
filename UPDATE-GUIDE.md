@@ -1,134 +1,106 @@
-# TempChat v5 — group receipts, shared appearance & capture consent
+# TempChat camera fix — v5.1
 
-Built from `mayadandapath123-dotcom/temp-chat`, main commit `dbd5e5ab0639ea44abae9aed94b90df1de12c63e` (September 2, 2026). At inspection, the original four frontend files exactly matched https://temp-chat-rztd.onrender.com/. The deployed backend/source repository cannot be authenticated from the public URL; check Render Settings before pushing.
+Based on your current GitHub main at **9ea76daae5a83bf5cb7af3bf1d62feed8d24bdca**, which already includes the previous receipts/themes update. This release does not use the stale pre-update code.
 
-## What changed
+## Changes
 
-- Text: Sending → Sent → Delivered N/total → Seen N/total; tap a status for recipient names and session IDs. A send not confirmed within 12 seconds is marked uncertain, not falsely marked delivered. Its text can be restored to the composer.
-- Photos and voice notes: Sent, Delivered, and Seen status for the message tile. Seen does NOT mean a photo was opened or a recording was played. Existing photo-open notification remains separate.
-- Same display names do not confuse ownership or receipt identity. Recipients are snapshotted at send time. Later arrivals do not count; leavers remain in the original denominator. Reconnected sessions are new identities; old messages/receipts are not replayed.
-- Incoming receipts are batched and contain IDs only. Visibility checks require a focused, visible document and an actually visible, unobscured message in the main chat or in-call drawer.
-- Six shared themes: Midnight gold, Ocean, Forest, Rose, Violet, Daylight. Any member can change the room appearance for everybody.
-- Photo wallpapers: compressed in-browser to JPEG, max 1280 px long edge and 220 KiB output. Input max 12 MiB. Shared on change and when a member joins; palette/overlay-only changes do not resend the photo. Server validates type marker, byte limit, palette, overlay, and change frequency. Upload uses binary Socket.IO, not base64.
-- Wallpaper overlay adjusts from 20–85%. Palette selection shows a local preview before Apply for everyone.
-- Capture permission: one advisory room-wide request at a time; all other CURRENT members must approve. Pending request expires after 60 seconds. Approval lasts 30 seconds, belongs only to the requester, and can be revoked by any member. A join/leave, new message, reset, or theme change invalidates approval. Denial blocks agreement immediately. This does not authorize capture on behalf of members who already left.
-- No automatic screenshots, recording, or chat exports. No unreliable keyboard blocking or fake screenshot detection.
-- Fixed group view-once handling: one recipient opening a photo does not expire other recipients' copies. Photo-open notification now happens on opening, rather than closing.
-- Reconnection rejoins the active room. Reset clears local photo references and new room metadata.
-- Existing server-relayed calls, VAD/downsampling, video throttling, voice notes, screen sharing, camera controls, presence, and room isolation are retained.
-- Updated vulnerable transitive dependencies within existing compatible ranges; `npm audit` reported zero vulnerabilities at packaging. No new production dependency. `socket.io-client` is a development-only integration-test dependency.
+### Camera switching
+- Fixes both video-call Flip and photo-camera Flip.
+- Stops the old **video** track before acquiring another. Mobile hardware often rejects opening two cameras concurrently.
+- Requests the desired front/rear facing mode with `exact`, then tries appropriate alternate camera device IDs when browsers do not honor/support facing selection.
+- Detects a browser returning the old or wrong camera when settings identify it, instead of simply changing the preview mirror and claiming success.
+- Restores the previous camera if no alternate camera is accessible. A device with only one accessible camera cannot genuinely flip; the app now reports recovery instead of pretending it changed.
+- Locks camera controls while switching to prevent overlapping requests from rapid taps.
+- Stops late-returned camera tracks if you close the photo camera or leave the call while camera access is pending.
+- Keeps the call microphone track and its mute state unchanged during a flip. Video may pause briefly while the hardware changes.
+- Blocks camera flipping during screen sharing with an explanatory toast. Stop screen sharing first.
+- Recovers from an ended call-camera track when you turn the camera back on.
+- The photo-camera modal is unavailable while in a call to avoid competing for the call camera. Gallery selection remains available outside the call overlay.
 
-## Privacy and limitations — read before sharing the app
+### Removed
+The screenshot/capture-permission feature is completely removed: toolbar button, settings entry, dialogs, votes, timers, Socket.IO handlers, and server state. There is no replacement screenshot restriction. Ordinary websites cannot reliably block operating-system screenshots.
 
-A browser website CANNOT reliably prevent or detect operating-system screenshots, screen recordings, or another camera. Consent is an explicit social agreement, not a technical lock. No watermark or UI restriction can make it screenshot-proof.
+### Kept
+Group Sent/Delivered/Seen statuses, per-person details, all six themes, shared compressed photo wallpapers, text chat, voice notes, group view-once photos, presence, invitations, reset, server-relayed calls, VAD, and video bandwidth throttling.
 
-Messages/media still travel through the server. HTTPS provides transport protection, not end-to-end encryption. Do not market the service as screenshot-proof or E2EE. The new features add no database, disk uploads, or analytics. Existing server/hosting infrastructure may log connections/requests.
+## Download, install and deploy
 
-The server temporarily keeps receipt metadata (not message bodies) for at most 1 hour of valid tracking, capped at the latest 1,000 messages per room; stale records are pruned on message activity. All new metadata and wallpaper bytes are cleared when the last member leaves or the room is reset. Restart clears all memory. Existing clients can still display earlier content until closed/reset; disconnect does not erase someone else's screen.
-
-Wallpaper is NOT view-once. Everyone can see/capture it. On Render free-tier spin-down/restart, in-memory appearance is lost.
-
-Calls remain server-relayed and can exhaust Render bandwidth, especially multi-person video. These features do not remove Render's quota. Limit group/video testing and check your dashboard Usage.
-
-## Download and apply to your existing project (Linux)
-
-Save the ZIP as `~/Downloads/TempChat-Update.zip`.
+Save the new ZIP as `~/Downloads/TempChat-Camera-Fix.zip`. Run:
 
 ```bash
-cd ~/Downloads
-unzip -o TempChat-Update.zip -d "$HOME/Downloads"
-bash "$HOME/Downloads/temp-chat-update/deploy-existing.sh"
+cd ~/Downloads &&
+unzip -o TempChat-Camera-Fix.zip -d "$HOME/Downloads" &&
+bash "$HOME/Downloads/temp-chat-camera-fix/deploy-existing.sh"
 ```
 
-If `unzip` is missing on Ubuntu/Debian: `sudo apt install unzip`.
+This script targets your existing project at **`~/Documents/Projects/temp-chat`**. It checks origin/main against the base above, refuses uncommitted changes or newer GitHub work, backs up your source under `~/Documents/Projects/temp-chat-backups/`, installs release files, and runs tests. It never changes remotes or force-pushes.
 
-The script uses exactly `~/Documents/Projects/temp-chat`. It:
-1. Clones that repo only if the project directory is absent.
-2. Checks repository, push remote, branch, working-tree cleanliness and GitHub base commit.
-3. STOPS if your project has local changes or GitHub contains newer code. Do not discard those changes—compare them first.
-4. Creates a private local backup under `~/Documents/Projects/temp-chat-backups/` (excluding `.git` and `node_modules`; `.env`, if present, stays in the local backup only).
-5. Copies the release files without touching `.git`, `.env`, or unrelated files.
-6. Installs exact dependencies and runs syntax/integration tests.
-7. Asks you to type **DEPLOY** to commit and push `main`. Press Enter to stop after local installation.
+When asked, type **DEPLOY** to commit and push to your existing GitHub `main`. Press Enter instead to keep the update local for testing. If the script stops, share the error; do not delete/reset your work.
 
-The script has no Render token and does not create a new service. Do not paste access tokens into chat. You must have write access to the GitHub account/repo. If GitHub authentication fails, use your normal authenticated Git/SSH setup; no force-push is required.
-
-## Verify the EXISTING Render service before choosing DEPLOY
-
-Open your existing `temp-chat-rztd` service → Settings:
+Your existing Render service should track:
 - Repository: `mayadandapath123-dotcom/temp-chat`
 - Branch: `main`
-- Runtime: Node
-- Root directory: repo root (blank), unless your service explicitly requires another value
-- Build: `npm ci` (existing `npm install` is also supported)
-- Start: `npm start` (existing `node server.js` is supported)
-- Auto-Deploy enabled to deploy after push
+- Build: `npm ci` or the existing `npm install`
+- Start: `npm start` or the existing `node server.js`
 
-If Auto-Deploy is off, use **Manual Deploy → Deploy latest commit** after pushing. If your service is connected to a different repo, STOP and compare before changing the integration. Matching live frontend files alone does not prove which of your three repositories Render tracks.
+With Auto-Deploy enabled, the push triggers deployment. Otherwise use **Manual Deploy → Deploy latest commit**. No new service is needed. No GitHub/Render credentials are included in the ZIP; use your normal Git authentication.
 
-The existing URL stays `https://temp-chat-rztd.onrender.com/`. Deployment/restart will end active calls and discard ephemeral server state. A bandwidth suspension is not fixed by a code push; check Render's current quota/billing status if deployment succeeds but service remains unavailable.
+Existing URL: **https://temp-chat-rztd.onrender.com/**
 
-## Optional local check before pushing
+**After deployment, close and reopen all phone/browser tabs**, or hard-refresh desktop with Ctrl+Shift+R. The camera helper and changed app files are versioned in the HTML to avoid stale cached code. Deployment restarts end active calls and discard temporary room state. A code push does not bypass Render bandwidth suspension.
 
-After the installer finishes, press Enter at the DEPLOY prompt. Stop an old local Node server with Ctrl+C in its terminal, then:
+## Optional local test before pushing
+
+Press Enter instead of DEPLOY, then:
 
 ```bash
 cd ~/Documents/Projects/temp-chat
 npm start
 ```
 
-Second terminal, for HTTPS testing with another device:
+Stop an older local server with Ctrl+C in its terminal first if port 3000 is occupied. For HTTPS on a phone, in a second terminal:
 
 ```bash
 cloudflared tunnel --url http://localhost:3000
 ```
 
-Share the generated `https://...trycloudflare.com` URL. Keep both terminals open. This runs on your laptop, not on Render. Use two or three browsers/phones in one room and follow the manual checklist in TEST-REPORT.md.
+Keep both terminals open. Use the generated HTTPS URL; plain HTTP on a LAN IP normally cannot access the camera. Test using the checklist in TEST-REPORT.md, particularly Android Chrome/iPhone Safari as applicable.
 
-## Push later, after local testing
-
-Only use these commands after the installer reports success:
+## Push later after a successful installation
 
 ```bash
 cd ~/Documents/Projects/temp-chat &&
-node --check server.js &&
-node --check lib/room-features.js &&
-node --check public/app.js &&
-node --check public/room-features.js &&
 npm test &&
-git add server.js package.json package-lock.json .gitignore public/index.html public/app.js public/style.css public/sw.js public/room-features.js public/room-features.css lib/room-features.js tests/room-features.test.js UPDATE-GUIDE.md TEST-REPORT.md &&
-git commit -m "Add group receipts, shared room themes, and capture consent" &&
+git add server.js package.json package-lock.json .gitignore public/index.html public/app.js public/style.css public/sw.js public/room-features.js public/room-features.css public/camera-manager.js lib/room-features.js tests/room-features.test.js tests/camera-manager.test.js UPDATE-GUIDE.md TEST-REPORT.md &&
+git commit -m "Fix camera switching and remove capture permission" &&
 git push origin main
 ```
 
-If `git commit` says “nothing to commit”, the update may already be committed. Check `git status` and `git log -1` before running `git push origin main`. Never use `git push --force` for this update.
-
-After deploy, hard-refresh on desktop (Ctrl+Shift+R), and close/reopen mobile tabs so all participants load the matching frontend/backend version.
+If the commit already exists, inspect `git status` and `git log -1` before pushing; don't force-push.
 
 ## Rollback
 
-If this update is the latest commit and nobody has added other work:
+Check `git log -3 --oneline`. Only if the latest commit is **Fix camera switching and remove capture permission**, and you want to undo precisely that release:
 
 ```bash
 cd ~/Documents/Projects/temp-chat
-git log -3 --oneline
-```
-
-Confirm HEAD is **Add group receipts, shared room themes, and capture consent**, then:
-
-```bash
 git revert --no-edit HEAD && git push origin main
 ```
 
-This makes a normal reverting commit; it does not rewrite history. Render can also deploy the previous working commit from its dashboard. Your pre-update source backup is in `~/Documents/Projects/temp-chat-backups/`; do not upload that archive because it may contain a local `.env`.
+Render can also redeploy the previous working commit. The local backup contains your pre-update source, including any local `.env`; don't upload/share that backup.
 
-## Maintainer map
+## Data and bandwidth
 
-- `lib/room-features.js`: bounded room receipt metadata, wallpaper state/validation, capture consent state machine.
-- `public/room-features.js`: additive UI, receipt batching/visibility, theme compression, consent dialogs, reconnect hook.
-- `public/room-features.css`: scoped UI and theme variables.
-- `server.js`: small integration hooks plus identity/receipt fields on relayed messages.
-- `public/app.js`: small render/send hooks and group view-once fix. Existing v3/v4 call code is not rewritten.
-- `tests/room-features.test.js`: real Socket.IO integration checks.
+These fixes add no new production dependencies, database, uploads, recording, or extra call streams. Audio/video still pass through the server and use outbound bandwidth. Shorten video tests on Render's allowance. Wallpapers remain compressed to a maximum 220 KiB.
 
-Run `npm ci --include=dev && npm test`. Node.js 18+ works; use a currently supported Node LTS for ongoing deployment. No secret environment variables are required by this update.
+Group receipt semantics are unchanged: Sent means server-accepted; Delivered means received by a participant's app; Seen means visible in a focused chat, not proof of reading. For media it refers to the tile, not playing/opening the contents. Receipt metadata is bounded per room and transient; wallpaper/metadata clear when the room empties, resets, or the server restarts. Content is not end-to-end encrypted, and recipients can capture or retain it.
+
+## Maintainer files
+
+- `public/camera-manager.js`: shared camera-only acquisition, validation, recovery, and cancellation helper; loaded before `app.js`.
+- `public/app.js`: call and photo flip integrations, control locks, race cleanup. Both existing v3/v4 photo-camera blocks use the helper because the later block replaces earlier UI.
+- `public/room-features.js`, `.css`, `lib/room-features.js`: capture-permission code removed; receipts/themes retained.
+- `tests/camera-manager.test.js`: isolated camera regression tests and permission-feature removal check.
+- `tests/room-features.test.js`: retained room/receipt/theme/media regression tests.
+
+Use `npm ci --include=dev && npm test` with Node.js 18+; a supported Node LTS is recommended for deployment.

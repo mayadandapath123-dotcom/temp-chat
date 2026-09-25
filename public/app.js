@@ -156,6 +156,7 @@ let localStream = null;
 let isMicMuted = false;
 let isCameraOff = false;
 let currentFacingMode = "user";
+let cameraSwitchBusy = false;
 let callStartedAt = 0;
 let callTimerInterval = null;
 let incomingCallData = null;
@@ -1422,6 +1423,8 @@ async function initMediaHardware(callType) {
     }
   }
 
+  const actualFacing = window.TempChatCamera.facingForTrack(localStream.getVideoTracks()[0]);
+  if (actualFacing) currentFacingMode = actualFacing;
   isMicMuted = false;
   isCameraOff = currentCallType === "audio";
   return localStream;
@@ -1873,66 +1876,76 @@ if (muteButton) {
   });
 }
 
+function syncCallCameraUI() {
+  if (cameraButton) cameraButton.classList.toggle("off", isCameraOff);
+  const tile = videoGrid?.querySelector('[data-peer-id="me"]');
+  tile?.querySelector(".video-tile-avatar")?.classList.toggle("hidden", !isCameraOff);
+  updateSelfTileMirror();
+  socket.emit("call-media-state", { video: !isCameraOff, audio: !isMicMuted });
+}
+
 if (cameraButton) {
   cameraButton.addEventListener("click", async () => {
-    if (!localStream) return;
-    const videoTrack = localStream.getVideoTracks()[0];
-    if (!videoTrack) {
-      try {
-        const camStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: currentFacingMode, width: { ideal: 640 }, height: { ideal: 480 } },
-        });
-        const newTrack = camStream.getVideoTracks()[0];
-        localStream.addTrack(newTrack);
-        if (localVideoElement) localVideoElement.srcObject = localStream;
-        isCameraOff = false;
-      } catch (e) {
-        return showToast("Cannot access camera.");
-      }
-    } else {
+    if (!localStream || cameraSwitchBusy) return;
+    if (window.__isScreenSharing) return showToast("Stop screen sharing before changing the camera.");
+    const stream = localStream;
+    const old = stream.getVideoTracks()[0];
+    if (old && old.readyState === "live") {
       isCameraOff = !isCameraOff;
-      videoTrack.enabled = !isCameraOff;
+      old.enabled = !isCameraOff;
+      syncCallCameraUI();
+      return;
     }
-    cameraButton.classList.toggle("off", isCameraOff);
-
-    const selfTile = videoGrid ? videoGrid.querySelector('[data-peer-id="me"]') : null;
-    if (selfTile) {
-      const avatar = selfTile.querySelector(".video-tile-avatar");
-      if (avatar) avatar.classList.toggle("hidden", !isCameraOff);
-    }
-    socket.emit("call-media-state", { video: !isCameraOff, audio: !isMicMuted });
+    cameraSwitchBusy = true;
+    cameraButton.disabled = true;
+    if (flipCameraButton) flipCameraButton.disabled = true;
+    try {
+      const result = await window.TempChatCamera.open({ facing: currentFacingMode, active: () => inCall && localStream === stream && !window.__isScreenSharing });
+      if (old) stream.removeTrack(old);
+      stream.addTrack(result.track);
+      currentFacingMode = result.facing;
+      isCameraOff = false;
+      if (localVideoElement) { localVideoElement.srcObject = stream; await localVideoElement.play().catch(() => {}); }
+      syncCallCameraUI();
+    } catch (e) { if (e.name !== "AbortError") showToast("Cannot access camera. Check browser permissions and try again."); }
+    finally { cameraSwitchBusy = false; cameraButton.disabled = false; if (flipCameraButton) flipCameraButton.disabled = false; }
   });
 }
 
 if (flipCameraButton) {
   flipCameraButton.addEventListener("click", async () => {
-    if (!localStream || isCameraOff) return;
-    const targetMode = currentFacingMode === "user" ? "environment" : "user";
-    const oldTrack = localStream.getVideoTracks()[0];
-
+    if (cameraSwitchBusy || !localStream || !inCall) return;
+    if (window.__isScreenSharing) return showToast("Stop screen sharing before flipping the camera.");
+    if (isCameraOff) return showToast("Turn your camera on before flipping it.");
+    const stream = localStream;
+    const old = stream.getVideoTracks()[0];
+    if (!old || old.readyState !== "live") return showToast("Turn your camera on again, then flip.");
+    const target = currentFacingMode === "user" ? "environment" : "user";
+    cameraSwitchBusy = true;
+    flipCameraButton.disabled = true;
+    flipCameraButton.setAttribute("aria-busy", "true");
+    if (cameraButton) cameraButton.disabled = true;
+    // Preserve the exact microphone track and its mute state throughout.
     try {
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: targetMode, width: { ideal: 640 }, height: { ideal: 480 } },
-      });
-      const newTrack = newStream.getVideoTracks()[0];
-
-      if (oldTrack) {
-        localStream.removeTrack(oldTrack);
-        oldTrack.stop();
+      const result = await window.TempChatCamera.open({ facing: target, previousTrack: old,
+        active: () => inCall && localStream === stream && !window.__isScreenSharing });
+      stream.removeTrack(old);
+      stream.addTrack(result.track);
+      currentFacingMode = result.facing;
+      isCameraOff = false;
+      if (localVideoElement) { localVideoElement.srcObject = stream; await localVideoElement.play().catch(() => {}); }
+      lastSentFrameLength = 0; staticFrameSkips = 0;
+      syncCallCameraUI();
+      showToast(result.restored ? "Could not switch cameras. Previous camera restored." : result.verifiedFacing ? (result.facing === "user" ? "Front camera" : "Back camera") : "Camera switched.");
+    } catch (e) {
+      if (e.name !== "AbortError" && localStream === stream && inCall) {
+        stream.removeTrack(old); isCameraOff = true; syncCallCameraUI();
+        showToast("Could not open the other camera. Turn the camera on to retry. Your microphone is unchanged.");
       }
-      localStream.addTrack(newTrack);
-
-      currentFacingMode = targetMode;
-
-      if (localVideoElement) {
-        localVideoElement.srcObject = localStream;
-      }
-
-      updateSelfTileMirror();
-      showToast(currentFacingMode === "user" ? "Front Camera" : "Back Camera");
-    } catch (err) {
-      console.warn("Camera flip error:", err);
-      showToast("Could not flip camera.");
+    } finally {
+      cameraSwitchBusy = false; flipCameraButton.disabled = false;
+      flipCameraButton.removeAttribute("aria-busy");
+      if (cameraButton) cameraButton.disabled = false;
     }
   });
 }
@@ -2565,6 +2578,7 @@ socket.on("disconnect", () => {
 
   async function startScreenShare() {
     if (!inCall) return showToast("Join a call first.");
+    if (cameraSwitchBusy) return showToast("Wait for the camera to finish switching.");
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== "function") {
       return showToast("Screen sharing isn't supported on phones. Use a laptop.");
     }
@@ -2640,6 +2654,7 @@ socket.on("disconnect", () => {
          it and opens the file manager. getUserMedia is the real fix.
   --------------------------------------------------------------- */
   let snapStream = null, snapFacing = "environment", camEls = null;
+  let snapBusy = false, snapGeneration = 0;
 
   function buildCameraUI() {
     if (camEls && document.body.contains(camEls.modal)) return camEls;
@@ -2669,9 +2684,8 @@ socket.on("disconnect", () => {
     wrap.querySelector("#camera-close-btn").addEventListener("click", closeCamera);
     wrap.querySelector("#camera-shutter-btn").addEventListener("click", capturePhoto);
     wrap.querySelector("#camera-flip-btn").addEventListener("click", async () => {
-      snapFacing = snapFacing === "environment" ? "user" : "environment";
-      camEls.video.classList.toggle("mirrored", snapFacing === "user");
-      try { await startSnap(); } catch (e) { showCamError(e); }
+      if (snapBusy || !snapStream) return;
+      try { await startSnap(true); } catch (e) { if (e.name !== "AbortError") showCamError(e); }
     });
     wrap.querySelector("#camera-gallery-fallback").addEventListener("click", () => {
       closeCamera();
@@ -2681,16 +2695,35 @@ socket.on("disconnect", () => {
     return camEls;
   }
 
-  async function startSnap() {
-    stopSnap();
-    snapStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: snapFacing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: false,
-    });
-    camEls.video.srcObject = snapStream;
-    try { await camEls.video.play(); } catch (e) {}
+  async function startSnap(flip = false) {
+    if (snapBusy) return;
+    const generation = ++snapGeneration;
+    const previous = snapStream?.getVideoTracks()[0] || null;
+    const target = flip ? (snapFacing === "environment" ? "user" : "environment") : snapFacing;
+    snapBusy = true;
+    const flipBtn = camEls.modal.querySelector("#camera-flip-btn");
+    const shutter = camEls.modal.querySelector("#camera-shutter-btn");
+    flipBtn.disabled = true; shutter.disabled = true;
+    camEls.error.classList.add("hidden");
+    try {
+      const result = await window.TempChatCamera.open({ facing: target, width: 1920, height: 1080,
+        previousTrack: previous,
+        active: () => generation === snapGeneration && !camEls.modal.classList.contains("hidden") });
+      snapStream = result.stream; snapFacing = result.facing;
+      camEls.video.srcObject = snapStream;
+      camEls.video.classList.toggle("mirrored", snapFacing === "user");
+      await camEls.video.play().catch(() => {});
+      if (result.restored) showToast("Could not switch cameras. Previous camera restored.");
+    } catch (err) {
+      if (generation === snapGeneration) { snapStream = null; camEls.video.srcObject = null; }
+      throw err;
+    } finally {
+      // A closed/reopened modal owns a newer operation; do not alter its controls.
+      if (generation === snapGeneration) { snapBusy = false; flipBtn.disabled = !snapStream; shutter.disabled = !snapStream; }
+    }
   }
   function stopSnap() {
+    snapGeneration++; snapBusy = false;
     if (snapStream) { snapStream.getTracks().forEach((t) => t.stop()); snapStream = null; }
     if (camEls && camEls.video) camEls.video.srcObject = null;
   }
@@ -2707,6 +2740,8 @@ socket.on("disconnect", () => {
     document.body.classList.remove("camera-open");
   }
   async function openCamera() {
+    if (inCall) return showToast("Finish your call before opening the photo camera, or use Gallery.");
+    if (snapBusy) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.isSecureContext) {
       const f = document.getElementById("camera-file-input");
       if (f) f.click();
@@ -2716,10 +2751,10 @@ socket.on("disconnect", () => {
     camEls.error.classList.add("hidden");
     camEls.modal.classList.remove("hidden");
     document.body.classList.add("camera-open");
-    try { await startSnap(); } catch (err) { showCamError(err); }
+    try { await startSnap(); } catch (err) { if (err.name !== "AbortError") showCamError(err); }
   }
   function capturePhoto() {
-    if (!camEls || !snapStream) return;
+    if (!camEls || !snapStream || snapBusy) return;
     const v = camEls.video, vw = v.videoWidth, vh = v.videoHeight;
     if (!vw || !vh) return;
     const maxDim = 1280;
@@ -3561,6 +3596,7 @@ socket.on("disconnect", () => {
 
   async function startScreenShare() {
     if (!inCall) return showToast("Join a call first.");
+    if (cameraSwitchBusy) return showToast("Wait for the camera to finish switching.");
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== "function") {
       return showToast("Screen sharing isn't supported on phones. Use a laptop.");
     }
@@ -3655,6 +3691,7 @@ socket.on("disconnect", () => {
          it and opens the file manager. getUserMedia is the real fix.
   --------------------------------------------------------------- */
   let snapStream = null, snapFacing = "environment", camEls = null;
+  let snapBusy = false, snapGeneration = 0;
 
   function buildCameraUI() {
     if (camEls && document.body.contains(camEls.modal)) return camEls;
@@ -3684,9 +3721,8 @@ socket.on("disconnect", () => {
     wrap.querySelector("#camera-close-btn").addEventListener("click", closeCamera);
     wrap.querySelector("#camera-shutter-btn").addEventListener("click", capturePhoto);
     wrap.querySelector("#camera-flip-btn").addEventListener("click", async () => {
-      snapFacing = snapFacing === "environment" ? "user" : "environment";
-      camEls.video.classList.toggle("mirrored", snapFacing === "user");
-      try { await startSnap(); } catch (e) { showCamError(e); }
+      if (snapBusy || !snapStream) return;
+      try { await startSnap(true); } catch (e) { if (e.name !== "AbortError") showCamError(e); }
     });
     wrap.querySelector("#camera-gallery-fallback").addEventListener("click", () => {
       closeCamera();
@@ -3696,16 +3732,35 @@ socket.on("disconnect", () => {
     return camEls;
   }
 
-  async function startSnap() {
-    stopSnap();
-    snapStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: snapFacing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: false,
-    });
-    camEls.video.srcObject = snapStream;
-    try { await camEls.video.play(); } catch (e) {}
+  async function startSnap(flip = false) {
+    if (snapBusy) return;
+    const generation = ++snapGeneration;
+    const previous = snapStream?.getVideoTracks()[0] || null;
+    const target = flip ? (snapFacing === "environment" ? "user" : "environment") : snapFacing;
+    snapBusy = true;
+    const flipBtn = camEls.modal.querySelector("#camera-flip-btn");
+    const shutter = camEls.modal.querySelector("#camera-shutter-btn");
+    flipBtn.disabled = true; shutter.disabled = true;
+    camEls.error.classList.add("hidden");
+    try {
+      const result = await window.TempChatCamera.open({ facing: target, width: 1920, height: 1080,
+        previousTrack: previous,
+        active: () => generation === snapGeneration && !camEls.modal.classList.contains("hidden") });
+      snapStream = result.stream; snapFacing = result.facing;
+      camEls.video.srcObject = snapStream;
+      camEls.video.classList.toggle("mirrored", snapFacing === "user");
+      await camEls.video.play().catch(() => {});
+      if (result.restored) showToast("Could not switch cameras. Previous camera restored.");
+    } catch (err) {
+      if (generation === snapGeneration) { snapStream = null; camEls.video.srcObject = null; }
+      throw err;
+    } finally {
+      // A closed/reopened modal owns a newer operation; do not alter its controls.
+      if (generation === snapGeneration) { snapBusy = false; flipBtn.disabled = !snapStream; shutter.disabled = !snapStream; }
+    }
   }
   function stopSnap() {
+    snapGeneration++; snapBusy = false;
     if (snapStream) { snapStream.getTracks().forEach((t) => t.stop()); snapStream = null; }
     if (camEls && camEls.video) camEls.video.srcObject = null;
   }
@@ -3722,6 +3777,8 @@ socket.on("disconnect", () => {
     document.body.classList.remove("camera-open");
   }
   async function openCamera() {
+    if (inCall) return showToast("Finish your call before opening the photo camera, or use Gallery.");
+    if (snapBusy) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.isSecureContext) {
       const f = document.getElementById("camera-file-input");
       if (f) f.click();
@@ -3731,10 +3788,10 @@ socket.on("disconnect", () => {
     camEls.error.classList.add("hidden");
     camEls.modal.classList.remove("hidden");
     document.body.classList.add("camera-open");
-    try { await startSnap(); } catch (err) { showCamError(err); }
+    try { await startSnap(); } catch (err) { if (err.name !== "AbortError") showCamError(err); }
   }
   function capturePhoto() {
-    if (!camEls || !snapStream) return;
+    if (!camEls || !snapStream || snapBusy) return;
     const v = camEls.video, vw = v.videoWidth, vh = v.videoHeight;
     if (!vw || !vh) return;
     const maxDim = 1280;

@@ -1,16 +1,16 @@
-/* TempChat v5: room receipts, shared appearance, and advisory capture consent.
+/* TempChat v5.1: room receipts and shared appearance.
    No third-party libraries, no persisted messages/wallpapers, no screenshot-blocking claims. */
 (function () {
   'use strict';
   const records = new Map(), pending = new Map();
   const deliveryQueue = new Set(), seenQueue = new Set();
   let receiptTimer, ready = false, theme = { palette: 'gold', shade: 60 }, wallpaperURL = null;
-  let consent = null, detailId = null;
+  let detailId = null;
   const $ = id => document.getElementById(id);
   const el = (tag, text, cls) => { const n = document.createElement(tag); if (text) n.textContent = text; if (cls) n.className = cls; return n; };
   const palettes = { gold: 'Midnight gold', ocean: 'Ocean', forest: 'Forest', rose: 'Rose', violet: 'Violet', daylight: 'Daylight' };
   const bar = el('div', '', 'tc-room-tools');
-  bar.innerHTML = '<button type="button" id="tc-theme-open">◐ <span>Room theme</span></button><button type="button" id="tc-consent-open">▣ <span id="tc-consent-label">Capture permission</span></button><span class="tc-shared-label">Shared with everyone</span>';
+  bar.innerHTML = '<button type="button" id="tc-theme-open">◐ <span>Room theme</span></button><span class="tc-shared-label">Shared with everyone</span>';
   document.querySelector('.chat-header')?.after(bar);
 
   const dialog = el('dialog', '', 'tc-dialog');
@@ -240,62 +240,17 @@
     note(body, 'No upload to a photo-hosting service. The room keeps its wallpaper in server memory until everyone leaves, the room is reset, or the server restarts.');
   }
 
-  // Consent is advisory only. No keyboard blocking, false detection, or hidden capture.
-  function showConsent() {
-    const body = open('Ask before you capture', 'consent');
-    note(body, 'Websites cannot reliably block or detect device screenshots, screen recordings, or another camera. This feature records agreement; it does not enforce it.', true);
-    note(body, 'Ask all other current room members before capturing the current chat or photo. Permission belongs only to the requester and lasts 30 seconds. A new message, membership change, or theme change cancels approval. Anyone can revoke it.');
-    if (!consent) body.append(el('div', 'No capture permission requested.', 'tc-summary'));
-    else {
-      body.append(el('div', `${consent.requester} · ${consent.status.toUpperCase()}`, 'tc-summary'));
-      if (consent.expiresAt) { const timer = el('p', '', 'tc-note'); timer.id = 'tc-consent-timer'; body.append(timer); updateCountdown(); }
-      if (consent.reason) note(body, consent.reason);
-      for (const p of consent.voters) {
-        const row = el('div', '', 'tc-member-row'); const name = el('div'); name.append(el('strong', `${p.username}${p.id === socket.id ? ' (you)' : ''}`), el('small', `Session …${p.id.slice(-5)}`)); row.append(name, el('span', p.vote)); body.append(row);
-      }
-      const voter = consent.voters.find(v => v.id === socket.id);
-      const actions = el('div', '', 'tc-actions'); body.append(actions);
-      async function act(event, data) { try { await request(event, data); } catch (e) { showToast(e.message); } }
-      if (consent.status === 'pending' && voter?.vote === 'pending') {
-        button(actions, 'Decline', () => act('capture-vote', { id: consent.id, vote: 'deny' }), 'tc-button tc-secondary');
-        button(actions, 'Approve for 30 seconds', () => act('capture-vote', { id: consent.id, vote: 'approve' }));
-      }
-      if (['pending', 'granted'].includes(consent.status)) button(actions, consent.requesterId === socket.id ? 'Cancel my request' : 'Revoke / cancel', () => act('capture-revoke', { id: consent.id }), 'tc-button tc-secondary');
-      if (consent.status === 'granted') note(body, consent.requesterId === socket.id ? 'Everyone approved your request. Use your device screenshot controls if you choose. TempChat does not take a screenshot for you.' : 'Approval applies only to the requester, not to everyone in the room.');
-    }
-    if (!consent || !['pending', 'granted'].includes(consent.status)) {
-      const b = button(body, 'Request permission from everyone', async () => { b.disabled = true; try { await request('capture-request', {}); } catch (e) { showToast(e.message); } finally { b.disabled = false; } });
-    }
-    note(body, 'Only current members vote. Their agreement does not give permission on behalf of people who already left. No automatic screenshots, recordings, or chat exports are created.');
-  }
-  function updateCountdown() {
-    const timer = $('tc-consent-timer');
-    if (timer && consent?.expiresAt) timer.textContent = `${Math.max(0, Math.ceil((consent.expiresAt - Date.now()) / 1000))} seconds remaining`;
-  }
-  setInterval(updateCountdown, 1000);
-  socket.on('capture-consent', data => {
-    const previous = consent; consent = data;
-    $('tc-consent-label').textContent = data ? `Capture: ${data.status}` : 'Capture permission';
-    $('tc-consent-open').dataset.status = data?.status || '';
-    if (dialog.open && dialogMode === 'consent') showConsent();
-    if (data && data.id !== previous?.id && data.status === 'pending') {
-      localSystemMessage(`${data.requester} requests capture permission. Open Capture permission to approve or decline.`);
-      if (data.requesterId !== socket.id) { showToast('Capture permission requested — tap Capture permission to respond.'); if (!dialog.open) showConsent(); }
-    } else if (data && previous?.status !== data.status) localSystemMessage(`Capture permission ${data.status}${data.reason ? ': ' + data.reason : '.'}`);
-  });
-  $('tc-theme-open').onclick = showThemes; $('tc-consent-open').onclick = showConsent;
+  $('tc-theme-open').onclick = showThemes;
   const menu = document.querySelector('#more-sheet .more-sheet-actions');
   if (menu) {
     button(menu, '◐ Shared themes & wallpaper', () => { $('more-sheet').classList.add('hidden'); showThemes(); }, 'more-sheet-item');
-    button(menu, '▣ Capture permission', () => { $('more-sheet').classList.add('hidden'); showConsent(); }, 'more-sheet-item');
   }
   socket.on('room-ready', () => { ready = true; flushReceipts(); });
   socket.on('connect', () => {
     if (joinedChat && currentRoom && currentUsername) socket.emit('join-room', { room: currentRoom, username: currentUsername });
   });
   socket.on('disconnect', () => {
-    ready = false; consent = null; $('tc-consent-label').textContent = 'Disconnected · no permission';
-    if (dialog.open && dialogMode === 'consent') showConsent();
+    ready = false;
     deliveryQueue.clear(); seenQueue.clear();
     for (const [id, p] of pending) { clearTimeout(p.timer); const r = records.get(id); if (r) { r.failed = true; repaint(r); } }
   });
@@ -305,7 +260,7 @@
   });
   const guide = document.querySelector('.guide-sections');
   if (guide) {
-    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts, shared themes & capture consent'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Room theme for shared colours and a compressed photo wallpaper. Capture permission asks all current members, but cannot block or detect device screenshots. The server relays content: this is not end-to-end encrypted. Wallpapers and receipt metadata are temporarily kept in memory; nothing is added to a database by these features.'));
+    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts & shared themes'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Room theme for shared colours and a compressed photo wallpaper. The server relays content: this is not end-to-end encrypted. Wallpapers and receipt metadata are temporarily kept in memory; nothing is added to a database by these features.'));
     guide.prepend(item);
   }
 })();

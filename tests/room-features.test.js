@@ -20,7 +20,6 @@ async function connect(room, username) {
 }
 const ack = (s, name, data) => new Promise((resolve, reject) => s.timeout(4000).emit(name, data, (err, reply) => err ? reject(err) : resolve(reply)));
 async function message(s, text = 'hello') { const p = event(s, 'chat-message'); s.emit('send-message', { message: text, clientId: 'test-id' }); return p; }
-async function requestCapture(s) { const p = event(s, 'capture-consent', c => c?.status === 'pending'); assert.equal((await ack(s, 'capture-request', {})).ok, true); return p; }
 before(async () => {
   server = spawn(process.execPath, ['server.js'], { env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
   base = await new Promise((resolve, reject) => {
@@ -72,28 +71,11 @@ test('shared theme: binary wallpaper, validation, throttling, late join, empty r
   const fresh = event(d, 'room-theme'); d.emit('join-room', { room: 'THEMES', username: 'D' }); const reset = await fresh;
   assert.equal(reset.palette, 'gold'); assert.equal(reset.wallpaper, null);
 });
-test('capture needs all peers, rejects outsider votes, grants briefly, revokes on content', async () => {
-  const a = await connect('CONSENT', 'A'), b = await connect('CONSENT', 'B'), c = await connect('CONSENT', 'C'), outsider = await connect('OUT', 'X');
-  const request = await requestCapture(a); assert.equal(request.voters.length, 2);
-  assert.ok((await ack(outsider, 'capture-vote', { id: request.id, vote: 'approve' })).error);
-  assert.ok((await ack(a, 'capture-vote', { id: request.id, vote: 'approve' })).error);
-  const partial = event(a, 'capture-consent', d => d?.voters[0].vote === 'approve');
-  await ack(b, 'capture-vote', { id: request.id, vote: 'approve' }); assert.equal((await partial).status, 'pending');
-  const granted = event(a, 'capture-consent', d => d?.status === 'granted'); await ack(c, 'capture-vote', { id: request.id, vote: 'approve' });
-  const g = await granted; assert.ok(g.expiresAt > Date.now()); assert.ok(g.expiresAt <= Date.now()+30000);
-  const cancelled = event(a, 'capture-consent', d => d?.status === 'cancelled'); await message(b, 'new content'); await cancelled;
-});
-test('capture decline and membership changes invalidate consent', async () => {
-  const a = await connect('DECLINE', 'A'), b = await connect('DECLINE', 'B'); const c = await requestCapture(a);
-  const denied = event(a, 'capture-consent', d => d?.status === 'denied'); await ack(b, 'capture-vote', { id: c.id, vote: 'deny' }); await denied;
-  const x = await connect('MEMBERSHIP', 'X'), y = await connect('MEMBERSHIP', 'Y'); await requestCapture(x);
-  const cancelled = event(x, 'capture-consent', d => d?.status === 'cancelled'); await connect('MEMBERSHIP', 'Z'); await cancelled;
-});
-test('reset clears receipts, shared wallpaper, and pending consent', async () => {
+test('reset clears receipts and shared wallpaper', async () => {
   const a = await connect('RESET', 'A'), b = await connect('RESET', 'B'); const msg = await message(a); await wait(50);
-  await ack(a, 'set-room-theme', { palette:'rose', shade:60, wallpaperAction:'keep' }); await requestCapture(a);
-  const theme = event(b, 'room-theme'), consent = event(b, 'capture-consent', d => d === null), cleared = event(b, 'clear-chat');
-  a.emit('reset-chat'); assert.equal((await theme).palette, 'gold'); await consent; await cleared;
+  await ack(a, 'set-room-theme', { palette:'rose', shade:60, wallpaperAction:'keep' });
+  const theme = event(b, 'room-theme'), cleared = event(b, 'clear-chat');
+  a.emit('reset-chat'); assert.equal((await theme).palette, 'gold'); await cleared;
   let updated = false; a.on('message-status', () => updated = true); b.emit('message-receipts', { ids:[msg.id], kind:'seen' }); await wait(300); assert.equal(updated,false);
 });
 test('existing calls relay media only to active participants; presence and typing still work', async () => {
