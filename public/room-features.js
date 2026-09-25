@@ -254,7 +254,7 @@
   }
   socket.on('room-ready', () => { ready = true; flushReceipts(); });
   socket.on('connect', () => {
-    if (joinedChat && currentRoom && currentUsername) socket.emit('join-room', { room: currentRoom, username: currentUsername });
+    if (joinedChat && currentRoom && currentUsername) socket.emit('join-room', { room: currentRoom, username: currentUsername, asAdmin: window.TempChatAdminMode === true });
   });
   socket.on('disconnect', () => {
     ready = false;

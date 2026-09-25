@@ -54,3 +54,9 @@ video.tc-zoom-preview.mirrored,.self-tile.mirrored video.tc-zoom-preview { trans
 .tc-push-toggle input { width:24px; height:24px; accent-color:var(--accent); flex-shrink:0; }
 
 [data-room-theme="daylight"] .tc-room-tools .tc-exit-room { color:#852020; background:#fbe0e0; }
+/* Visible moderation, never covert room access */
+.tc-admin-badge { display:inline-block; margin-left:6px; padding:2px 5px; border:1px solid var(--accent-border); background:var(--accent-subtle); color:var(--accent-light); border-radius:4px; font-size:8px; letter-spacing:.7px; vertical-align:middle; }
+.tc-admin-presence { flex:0 0 auto; padding:7px 14px; color:var(--accent-light); background:var(--accent-subtle); border-bottom:1px solid var(--accent-border); font-size:10px; text-align:center; }
+.tc-moderation-disclosure { color:var(--muted); font-size:10px; line-height:1.6; margin-top:15px; text-align:center; }
+.tc-admin-entry-note { padding:11px 13px; border:1px solid var(--accent-border); background:var(--accent-subtle); color:var(--text-dim); font-size:12px; line-height:1.6; border-radius:10px; margin:12px 0; }
+.tc-admin-entry-note a { color:var(--accent-light); text-decoration:underline; }

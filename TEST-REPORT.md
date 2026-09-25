@@ -1,53 +1,52 @@
-# TempChat v8 — joined-page notification fix
+# TempChat v9 — admin panel test report
 
-Base: GitHub main `3a66de09`.
+Base: GitHub main `7ebbce1e` (joined-session notifications).
 
-## Automated tests: 44 passed
+## Automated checks: 58 tests passed
 
-Includes all retained room, receipt, reply, theme, safe URL, Exit, camera and zoom checks, plus:
+Fourteen admin-specific tests cover:
+- No unauthenticated room data or moderation access; no key echo in responses.
+- Key validation, HttpOnly/SameSite cookie issuance, cross-origin rejection and CSRF checks.
+- HTTPS-proxy Secure/host-only cookie behavior.
+- Live session metrics and counters without chat bodies or a user-IP/location directory.
+- Cookie-authorized, publicly announced Admin entry, server-only role badges and guest reserved-name labeling.
+- Entry locks that preserve existing connections and allow verified Admin entry.
+- Scoped session removal without clearing other users' chat.
+- Typed room confirmation and fresh-room-instance checks.
+- Scoped clear/end-call/close-and-lock behavior.
+- Logout revocation and forced exit of that login's admin room sessions.
+- Admin page CSP, frame protection and no-store headers.
+- Failed-login rate limiting.
+- Session expiry and one-hour lock expiry with a controlled test clock.
+- Missing key leaves admin login disabled.
 
-- Joined/connected background pages can notify; foreground pages suppress ordinary alerts.
-- Explicit test notification is allowed only from a valid joined session.
-- Exited, disconnected, disabled, wrong-room or wrong-generation requests cannot notify.
-- A closed or unresponsive/suspended page cannot authorize a queued notification.
-- Exit closes shown notifications and rejects its queued old generation.
-- A delayed OS show completion that races with Exit is closed.
-- A new real join can notify after the old session ends.
-- Old alert clicks only focus a still-joined original page, never reopen an exited/closed room.
-- All legacy remote Web Push payloads are ignored.
-- Provider push stays disabled even when old keys/storage variables are supplied.
-- Old clients cannot create subscriptions or trigger push tests; the `web-push` dependency is absent.
+The existing 44 tests for joined-page notifications (including no post-Exit/closed-page alerts), room isolation, receipts, replies, safe links, themes, camera switching and zoom also passed.
 
-Unit tests simulate platform notification APIs; they do not prove a physical phone displayed an alert.
+The safe deployment installer passed a separate-HOME dry-run: correct repository cloned, private source backup created, explicit release files applied and all tests passed, without committing or pushing. Syntax/shell checks and `git diff --check` passed. Dependency audit reported zero known vulnerabilities at packaging.
 
-The installer also passed a separate-HOME dry-run: it cloned the verified base, backed up the source, copied the explicit release files and passed all tests without committing or pushing. Syntax/shell checks and `git diff --check` passed; dependency audit reported zero known vulnerabilities.
+## Browser checks
 
-## Browser smoke test
+Chromium desktop (1512×1080) and a mobile-size (390×844) viewport:
+- Login, key input clearing, absence of key in localStorage and HttpOnly cookie invisibility to page JavaScript.
+- Live dashboard, room selection, member data, responsive layout without horizontal page overflow.
+- Enter as Admin opens the normal chat with explicit join, server-verified name, visible announcement and badge.
+- Admin receives no earlier message replay; subsequent admin messages are visibly badged.
+- Remove sends the affected user to a fresh join page with the reason.
+- Locked room rejects new guest entry in the real chat UI.
+- Destructive action rejects wrong confirmation, then clears the intended room on correct confirmation.
+- Logout ends that login's admin room visit without logging out an independent owner session.
+- No uncaught page JavaScript errors in the completed admin smoke run.
 
-Chromium with a 390×844 touch viewport and a separate sender context. Only the browser permission result and OS notification tray API were mocked; the app, Socket.IO server, real service worker and live-page MessageChannel verification ran normally.
+The v8 joined-room notification browser regression was also rerun against this server: foreground suppression, live background alerts, disconnect/reconnect, Exit/close prevention and legacy Push ignoring still passed. Platform notification display is simulated in that regression; no physical-phone delivery guarantee is made.
 
-Passed:
-- One user permission request when enabling alerts.
-- Legacy browser Push unsubscribe attempted; `PushManager.subscribe` never called.
-- Explicit test shows through the live worker/page handshake.
-- Foreground new message does not create a system alert.
-- A still-joined background page creates a sender-name/text alert.
-- Disconnect pauses alerts; an actual room reconnection can resume them.
-- Exit returns to Join, preserves the other participant, closes that session's alerts, and prevents fresh alerts after leaving.
-- Closing the page prevents an explicitly queued old-epoch notification request from showing.
-- Legacy server Push payloads are ignored.
-- No uncaught browser page errors in the completed run.
+## Test after deployment
 
-## Real-device checklist
+1. Without logging in, opening `/admin` should show only the login page; `/api/admin/snapshot` should reject access.
+2. Generate/store your key privately, set ADMIN_KEY on TempChat, deploy, and sign in.
+3. Join a test room on two devices; inspect their separate sessions and active/away times. Treat presence as approximate.
+4. Enter that room as Admin. Both devices should see the announcement/banner and verified badges. Earlier messages must not appear as recovered history.
+5. On test sessions only, try remove, entry lock/unlock, clear, end-call and close-and-lock. Check unaffected rooms stay intact.
+6. Log out; the admin room visit should end and API access should require login again.
+7. Verify normal replies, camera flip/zoom, themes, Exit and joined-room notifications remain working.
 
-After deploying, close all older TempChat tabs/windows, reopen the current URL, join the same room on two devices and enable Joined-room notifications:
-
-1. While viewing the chat, new messages appear normally without redundant system alerts.
-2. Switch to a different tab/app without exiting the room. Send a message from the other device; an alert should appear if the browser remains running and connected.
-3. Press Exit and send another message. There must be no new alert from the exited session.
-4. Join again, then close that page/browser. New messages must not create new alerts from that closed session.
-5. Turn notifications off and verify no new alerts. Turn them on again while joined and use Send test notification.
-6. Try losing network: alerts must pause until the room actually reconnects.
-7. Confirm replies, call/camera zoom/flip, links, themes and other members' chat are unaffected.
-
-A fully suspended browser can stop session-only alerts even if its tab remains listed. This is the intentional trade-off for removing closed-page/offline notifications. Browser permissions, DND and OS history remain outside the app's control. A separate still-joined tab or a different old TempChat domain is a separate source of alerts.
+No production deployment or real private admin key was created from this workspace. Automated checks are not a complete independent security audit. Protect the owner key and review the documented ephemeral-state and anonymous-session limitations.

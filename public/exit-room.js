@@ -1,9 +1,9 @@
 (function () {
   'use strict';
   let leaving = false;
-  async function leave() {
-    if (leaving || !joinedChat) return;
-    if (!confirm(`Exit room #${currentRoom}?\n\nThis ends your call, clears this tab’s chat and stops its room alerts. Other members and their chat are not cleared.`)) return;
+  async function leave(force = false, reason = "") {
+    if (leaving || (!force && !joinedChat)) return;
+    if (!force && !confirm(`Exit room #${currentRoom}?\n\nThis ends your call, clears this tab’s chat and stops its room alerts. Other members and their chat are not cleared.`)) return;
     leaving = true; window.__tempChatExiting = true;
     document.querySelectorAll('.tc-exit-room').forEach(b => { b.disabled = true; b.textContent = 'Exiting…'; });
     const token = window.TempChatNotifications.token();
@@ -29,12 +29,14 @@
     socket.disconnect();
     // A fresh document disposes all timers, media decoders, object URLs and JS
     // message state; replace removes the active-room URL from this history entry.
+    if (reason) { try { sessionStorage.setItem('tempchat_exit_notice', reason.slice(0, 180)); } catch (_) {} }
     window.location.replace('/');
   }
   function button(parent) {
     if (!parent) return;
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'tc-exit-room'; b.textContent = 'Exit Room'; b.title = 'Leave this room (only your session)'; b.onclick = leave; parent.append(b);
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'tc-exit-room'; b.textContent = 'Exit Room'; b.title = 'Leave this room (only your session)'; b.onclick = () => leave(); parent.append(b);
   }
+  window.TempChatExit = { force: reason => leave(true, reason) };
   button(document.querySelector('.tc-room-tools'));
   button(document.querySelector('.call-screen-header'));
   const guide = document.querySelector('.guide-sections');

@@ -10,9 +10,9 @@
     .hidden { display: none !important; }
   </style>
 
-  <link rel="stylesheet" href="/style.css?v=8" />
-  <link rel="stylesheet" href="/room-features.css?v=8">
-  <link rel="stylesheet" href="/enhancements.css?v=8">
+  <link rel="stylesheet" href="/style.css?v=9" />
+  <link rel="stylesheet" href="/room-features.css?v=9">
+  <link rel="stylesheet" href="/enhancements.css?v=9">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -83,7 +83,7 @@
               id="room"
               type="text"
               placeholder="e.g. BLUE123"
-              maxlength="20"
+              maxlength="24"
               autocomplete="off"
               autocapitalize="characters"
               spellcheck="false"
@@ -106,6 +106,7 @@
         </button>
       </div>
 
+      <p class="tc-moderation-disclosure">The site owner can view live room and member metadata. Admin visits are announced; there is no hidden chat-history viewer.</p>
       <div class="security-footer">
         <span class="sec-dot"></span>
         <span>Ephemeral rooms • Server-relayed</span>
@@ -528,16 +529,17 @@
   <div id="toast-container" class="toast-container"></div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/links.js?v=8"></script>
-  <script src="/camera-manager.js?v=8"></script>
-  <script src="/camera-zoom.js?v=8"></script>
-  <script src="/notifications.js?v=8"></script>
-  <script src="/app.js?v=8"></script>
-  <script src="/room-features.js?v=8"></script>
-  <script src="/replies.js?v=8"></script>
-  <script src="/zoom-ui.js?v=8"></script>
+  <script src="/links.js?v=9"></script>
+  <script src="/camera-manager.js?v=9"></script>
+  <script src="/camera-zoom.js?v=9"></script>
+  <script src="/notifications.js?v=9"></script>
+  <script src="/app.js?v=9"></script>
+  <script src="/room-features.js?v=9"></script>
+  <script src="/replies.js?v=9"></script>
+  <script src="/zoom-ui.js?v=9"></script>
   <script>window.TempChatNotifications.mount();</script>
-  <script src="/exit-room.js?v=8"></script>
+  <script src="/exit-room.js?v=9"></script>
+  <script src="/admin-client.js?v=9"></script>
 </body>
 </html>
 

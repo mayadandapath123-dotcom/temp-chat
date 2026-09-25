@@ -422,7 +422,7 @@ function initApp() {
   }
 
   if (roomFromUrl) {
-    const cleanRoom = roomFromUrl.trim().toUpperCase().slice(0, 20);
+    const cleanRoom = roomFromUrl.trim().toUpperCase().slice(0, 24);
     if (roomInput) roomInput.value = cleanRoom;
     if (invitedRoomCode) invitedRoomCode.textContent = `#${cleanRoom}`;
     if (inviteBanner) inviteBanner.classList.remove("hidden");
@@ -500,14 +500,15 @@ function joinChat() {
   }
 
   currentUsername = finalUsername.slice(0, 20);
-  currentRoom = rawRoom.slice(0, 20);
-  history.replaceState(null, "", `/?room=${encodeURIComponent(currentRoom)}`);
+  currentRoom = rawRoom.slice(0, 24);
+  history.replaceState(null, "", `/?room=${encodeURIComponent(currentRoom)}${window.TempChatAdminMode ? "&admin=1" : ""}`);
 
   getSfxContext();
 
   socket.emit("join-room", {
     username: currentUsername,
     room: currentRoom,
+    asAdmin: window.TempChatAdminMode === true,
   });
 
   if (roomName) roomName.textContent = `#${currentRoom}`;
@@ -2030,7 +2031,7 @@ window.addEventListener("blur", () => {
 function startPresenceHeartbeat() {
   if (presenceHeartbeat) clearInterval(presenceHeartbeat);
   presenceHeartbeat = setInterval(() => {
-    if (joinedChat && document.visibilityState === "visible") {
+    if (joinedChat && document.visibilityState === "visible" && document.hasFocus()) {
       socket.emit("presence-heartbeat");
     }
   }, 5000);
@@ -2048,7 +2049,8 @@ function updatePeopleUI(people) {
     const dot = document.createElement("span");
     dot.className = `status-dot ${p.status}`;
     const name = document.createElement("span");
-    name.textContent = p.username === currentUsername ? `${p.username} (You)` : p.username;
+    name.textContent = (p.id ? p.id === socket.id : p.username === currentUsername) ? `${p.username} (You)` : p.username;
+    if (p.isAdmin) { const badge = document.createElement("span"); badge.className = "tc-admin-badge"; badge.textContent = "ADMIN"; name.append(badge); }
     left.appendChild(dot);
     left.appendChild(name);
     const status = document.createElement("span");

@@ -39,17 +39,6 @@ app.post("/api/push/unregister", express.json({ limit: "16kb" }), (req, res) => 
   res.set("Cache-Control", "no-store").json({ ok: true });
 });
 
-// Serve frontend files from the 'public' folder
-app.use(express.static(path.join(__dirname, "public")));
-
-// Route fallback: send public/index.html for any room URL or page route
-app.use((req, res) => {
-  if (path.extname(req.path)) {
-    return res.status(404).send("File not found");
-  }
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
 /*
   TEMP CHAT & CALL ARCHITECTURE
   -----------------------------
@@ -61,6 +50,36 @@ const features = require("./lib/room-features")(io);
 const { randomUUID } = require("node:crypto");
 const PRESENCE_TIMEOUT = 12000;
 const calls = new Map(); // room -> Map(socketId -> { username, callType, videoEnabled, audioEnabled })
+const admin = require("./lib/admin-control")({
+  app, io, calls,
+  controls: {
+    eject(socket, reason) { forceLeave(socket, reason); },
+    clear(room) { clearRoom(room); },
+    endCall(room) { endRoomCall(room); },
+  },
+});
+
+function clearRoom(room) {
+  features.reset(room); pushService.reset(room);
+  io.to(room).emit("push-reset"); io.to(room).emit("clear-chat");
+}
+function endRoomCall(room) {
+  calls.delete(room); io.to(room).emit("call-ended"); broadcastCallStatus(room);
+}
+function forceLeave(socket, reason) {
+  const room = socket.room, wasAdmin = Boolean(socket.isAdmin);
+  socket.emit("moderation-exit", { reason: String(reason || "This session has ended.").slice(0, 180) });
+  clearTimeout(socket.presenceTimeout); removeFromCall(socket); pushService.leave(socket);
+  if (room) {
+    socket.leave(room); admin.left(socket, room); features.left(room);
+    socket.room = null; socket.username = null; socket.isAdmin = false;
+    if (wasAdmin) io.to(room).emit("system-message", { text: "Admin left this room." });
+    broadcastPresence(room); broadcastCallStatus(room);
+  }
+  socket.moderationRemoved = true;
+  const timer = setTimeout(() => socket.disconnect(true), 200); timer.unref?.();
+}
+
 
 async function broadcastPresence(room) {
   if (!room) return;
@@ -68,7 +87,9 @@ async function broadcastPresence(room) {
   const people = sockets
     .filter((socket) => socket.username)
     .map((socket) => ({
+      id: socket.id,
       username: socket.username,
+      isAdmin: Boolean(socket.isAdmin),
       status: socket.presenceStatus || "away",
     }));
 
@@ -98,6 +119,7 @@ function startPresenceTimeout(socket) {
     if (!socket.room || !socket.username) return;
     if (socket.presenceStatus !== "away") {
       socket.presenceStatus = "away";
+      admin.presence(socket, "away", false);
       broadcastPresence(socket.room);
     }
   }, PRESENCE_TIMEOUT);
@@ -129,12 +151,22 @@ io.on("connection", (socket) => {
     username = String(username || "").trim().slice(0, 24);
     room = String(room || "").trim().toUpperCase().slice(0, 24);
     if (!username || !room) return;
+    if (socket.moderationRemoved) return socket.emit("join-error", { error: "This session was removed. Open a new page to rejoin if room entry is unlocked." });
+    let moderator = null;
+    if (data.asAdmin === true) {
+      moderator = admin.authorizeSocket(socket);
+      if (!moderator) return socket.emit("join-error", { error: "Sign in at /admin before entering a room as Admin." });
+      username = "Admin";
+    }
+    if (!moderator && /^(admin|administrator|moderator)$/i.test(username)) username += " (guest)";
+    if (!moderator && !admin.canJoin(room)) return socket.emit("join-error", { error: "Admin has temporarily locked entry to this room. Try later." });
 
     if (socket.room) {
       const oldRoom = socket.room;
       removeFromCall(socket);
       pushService.leave(socket);
       socket.leave(oldRoom);
+      admin.left(socket, oldRoom);
       features.left(oldRoom);
       socket.to(oldRoom).emit("system-message", {
         text: `${socket.username} left the room.`,
@@ -147,11 +179,12 @@ io.on("connection", (socket) => {
     socket.username = username;
     socket.room = room;
     socket.presenceStatus = "active";
+    socket.isAdmin = Boolean(moderator); socket.adminSessionId = moderator?.id || null;
+    admin.joined(socket);
     features.joined(socket);
 
-    socket.to(room).emit("system-message", {
-      text: `${username} entered the room.`,
-    });
+    if (socket.isAdmin) io.to(room).emit("system-message", { text: "Admin joined this room visibly for moderation." });
+    else socket.to(room).emit("system-message", { text: `${username} entered the room.` });
 
     broadcastPresence(room);
     broadcastCallStatus(room);
@@ -166,7 +199,8 @@ io.on("connection", (socket) => {
     pushService.leave(socket);
     if (data?.token) pushService.unregister(data.token);
     if (room) {
-      socket.leave(room); socket.room = null; socket.username = null;
+      socket.leave(room); admin.left(socket, room);
+      socket.room = null; socket.username = null; socket.isAdmin = false; socket.adminSessionId = null;
       features.left(room);
       io.to(room).emit("user-stop-typing", { username });
       io.to(room).emit("system-message", { text: `${username} left the room.` });
@@ -200,9 +234,10 @@ io.on("connection", (socket) => {
       return;
     }
     io.to(socket.room).emit("chat-message", {
-      id, clientId, room: socket.room, ...features.record(socket, id, { kind: "text", text: message }), reply: quote.value, username: socket.username, message,
+      id, clientId, room: socket.room, ...features.record(socket, id, { kind: "text", text: message }), reply: quote.value, username: socket.username, isAdmin: Boolean(socket.isAdmin), message,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
+    admin.activity(socket, "text", Buffer.byteLength(message), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
     pushService.notify(socket, { id, title: socket.username, body: message });
     if (typeof ack === "function") ack({ ok: true, id });
   });
@@ -214,10 +249,12 @@ io.on("connection", (socket) => {
     io.to(socket.room).emit("voice-message", {
       id, room: socket.room, ...features.record(socket, id, { kind: "voice", text: "Voice note" }),
       username: socket.username,
+      isAdmin: Boolean(socket.isAdmin),
       audio: data.audio,
       mime: data.mime || "audio/webm",
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
+    admin.activity(socket, "voice", admin.size(data.audio), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
     pushService.notify(socket, { id, title: socket.username, body: "Sent a voice note" });
   });
 
@@ -228,11 +265,13 @@ io.on("connection", (socket) => {
     io.to(socket.room).emit("single-photo", {
       id, room: socket.room, ...features.record(socket, id, { kind: "photo", text: data.isViewOnce !== false ? "View-once photo" : "Photo" }),
       username: socket.username,
+      isAdmin: Boolean(socket.isAdmin),
       image: data.image,
       caption: String(data.caption || "").slice(0, 200),
       isViewOnce: data.isViewOnce !== false,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
+    admin.activity(socket, "photo", admin.size(data.image), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
     pushService.notify(socket, { id, title: socket.username, body: data.isViewOnce !== false ? "Sent a view-once photo" : "Sent a photo" });
   });
 
@@ -334,6 +373,7 @@ io.on("connection", (socket) => {
     // Using socket.to(room) would also blast every frame at people who are
     // merely in the chat room -- their client discards it, but the host has
     // already been billed for the egress.
+    admin.activity(socket, "videoFrames", admin.size(data.frame), roomCall.size - 1);
     for (const peerId of roomCall.keys()) {
       if (peerId === socket.id) continue;
       io.to(peerId).emit("video-frame", {
@@ -351,6 +391,7 @@ io.on("connection", (socket) => {
 
     // BANDWIDTH CRITICAL: relay ONLY to sockets actually in the call
     // (see the note on video-frame above).
+    admin.activity(socket, "audioFrames", admin.size(data.pcm), roomCall.size - 1);
     for (const peerId of roomCall.keys()) {
       if (peerId === socket.id) continue;
       io.to(peerId).emit("audio-pcm", {
@@ -386,10 +427,7 @@ io.on("connection", (socket) => {
   // Reset Chat
   socket.on("reset-chat", () => {
     if (!socket.room) return;
-    features.reset(socket.room);
-    pushService.reset(socket.room);
-    io.to(socket.room).emit("push-reset");
-    io.to(socket.room).emit("clear-chat");
+    clearRoom(socket.room);
   });
 
   // Presence
@@ -397,12 +435,14 @@ io.on("connection", (socket) => {
     if (!socket.room || !socket.username) return;
     if (status !== "active" && status !== "away") return;
     socket.presenceStatus = status;
+    admin.presence(socket, status);
     startPresenceTimeout(socket);
     broadcastPresence(socket.room);
   });
 
   socket.on("presence-heartbeat", () => {
     if (!socket.room || !socket.username) return;
+    admin.presence(socket, "active");
     if (socket.presenceStatus !== "active") {
       socket.presenceStatus = "active";
       broadcastPresence(socket.room);
@@ -416,6 +456,7 @@ io.on("connection", (socket) => {
     removeFromCall(socket);
     if (socket.room && socket.username) {
       const room = socket.room;
+      admin.left(socket, room);
       features.left(room);
       socket.to(room).emit("system-message", {
         text: `${socket.username} disconnected.`,
@@ -428,6 +469,18 @@ io.on("connection", (socket) => {
     console.log("Socket disconnected:", socket.id);
   });
 });
+
+// Serve frontend files from the 'public' folder
+app.use(express.static(path.join(__dirname, "public")));
+
+// Route fallback: send public/index.html for any room URL or page route
+app.use((req, res) => {
+  if (path.extname(req.path)) {
+    return res.status(404).send("File not found");
+  }
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
