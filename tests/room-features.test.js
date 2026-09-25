@@ -120,3 +120,19 @@ test('explicit Exit leaves only one member and never clears the other chat',asyn
  const replied=event(b,'chat-message',d=>d.message==='Reply after A left');b.emit('send-message',{message:'Reply after A left',replyTo:original.id});assert.equal((await replied).reply.text,'Keep this message');
 });
 test('public push configuration is explicit and no VAPID private key is exposed',async()=>{const res=await fetch(base+'/api/push/config');assert.equal(res.status,200);const cfg=await res.json();assert.equal(typeof cfg.configured,'boolean');assert.equal(Object.hasOwn(cfg,'privateKey'),false);});
+
+test('session-health reports only caller membership and never resets or rejoins a healthy room',async()=>{
+ const a=await connect('HEALTH','A'),b=await connect('HEALTH','B');
+ let notices=0,cleared=0;b.on('system-message',()=>notices++);b.on('clear-chat',()=>cleared++);
+ const before=a.id;
+ const result=await ack(a,'session-health',{room:'OTHER',admin:true});
+ assert.equal(result.ok,true);assert.equal(result.room,'HEALTH');assert.equal(result.selfId,before);assert.equal(result.inCall,false);assert.equal(result.isAdmin,false);assert.equal(result.removed,false);
+ await wait(60);assert.equal(notices,0);assert.equal(cleared,0);assert.equal(a.id,before);
+});
+test('session-health reflects current call membership and a left room without restoring either',async()=>{
+ const a=await connect('HEALTHCALL','A');
+ a.emit('call-start',{callType:'audio'});await wait(40);
+ const result=await ack(a,'session-health',{});assert.equal(result.inCall,true);
+ await ack(a,'leave-room',{});
+ const left=await ack(a,'session-health',{});assert.equal(left.room,null);assert.equal(left.inCall,false);
+});

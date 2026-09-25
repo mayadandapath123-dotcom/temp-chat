@@ -10,7 +10,7 @@
   const el = (tag, text, cls) => { const n = document.createElement(tag); if (text) n.textContent = text; if (cls) n.className = cls; return n; };
   const palettes = { gold: 'Midnight gold', ocean: 'Ocean', forest: 'Forest', rose: 'Rose', violet: 'Violet', daylight: 'Daylight' };
   const bar = el('div', '', 'tc-room-tools');
-  bar.innerHTML = '<button type="button" id="tc-theme-open">◐ <span>Room theme</span></button><span class="tc-shared-label">Shared with everyone</span>';
+  bar.innerHTML = '<span id="tc-connection-label" class="tc-connection-label" role="status">Connecting…</span>';
   document.querySelector('.chat-header')?.after(bar);
 
   const dialog = el('dialog', '', 'tc-dialog');
@@ -247,7 +247,6 @@
     note(body, 'No upload to a photo-hosting service. The room keeps its wallpaper in server memory until everyone leaves, the room is reset, or the server restarts.');
   }
 
-  $('tc-theme-open').onclick = showThemes;
   const menu = document.querySelector('#more-sheet .more-sheet-actions');
   if (menu) {
     button(menu, '◐ Shared themes & wallpaper', () => { $('more-sheet').classList.add('hidden'); showThemes(); }, 'more-sheet-item');
@@ -267,7 +266,7 @@
   });
   const guide = document.querySelector('.guide-sections');
   if (guide) {
-    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts & shared themes'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Room theme for shared colours and a compressed photo wallpaper. The server relays content: this is not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are temporarily kept in memory; nothing is added to a database by these features.'));
+    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts & shared themes'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Settings → Shared themes & wallpaper for shared colours and a compressed photo wallpaper. The server relays content: this is not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are temporarily kept in memory; nothing is added to a database by these features.'));
     guide.prepend(item);
   }
 })();

@@ -73,7 +73,7 @@ Select a room → **Enter as Admin** → explicitly join in the new chat tab.
 - You receive new messages after entering like another participant. The dashboard does not stream chat contents, replay earlier messages, recover deleted content or bypass view-once media.
 - Calls still require the normal visible call join flow and any browser microphone/camera permission. There is no silent call-listening feature.
 
-The public join screen and manual disclose live metadata visibility and announced admin visits.
+The join-screen disclosure, room entry announcements and verified badges retain moderation transparency. The public manual’s admin walkthrough has been removed in v10.
 
 ## 6. Moderation controls
 

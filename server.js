@@ -145,6 +145,14 @@ io.on("connection", (socket) => {
   features.attach(socket);
   pushService.attach(socket);
 
+  // A read-only liveness check: never joins, resets or exposes another room.
+  socket.on("session-health", (_data, ack) => {
+    if (typeof ack === "function") ack({ ok: true, room: socket.room || null,
+      selfId: socket.id, isAdmin: Boolean(socket.isAdmin),
+      inCall: Boolean(socket.room && calls.get(socket.room)?.has(socket.id)),
+      removed: Boolean(socket.moderationRemoved) });
+  });
+
   // Join Room
   socket.on("join-room", (data = {}) => {
     let { username, room } = data || {};

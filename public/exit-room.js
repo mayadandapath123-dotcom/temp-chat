@@ -1,11 +1,11 @@
 (function () {
   'use strict';
   let leaving = false;
-  async function leave(force = false, reason = "") {
+  async function leave(force = false, reason = "", nextUrl = "/") {
     if (leaving || (!force && !joinedChat)) return;
     if (!force && !confirm(`Exit room #${currentRoom}?\n\nThis ends your call, clears this tab’s chat and stops its room alerts. Other members and their chat are not cleared.`)) return;
     leaving = true; window.__tempChatExiting = true;
-    document.querySelectorAll('.tc-exit-room').forEach(b => { b.disabled = true; b.textContent = 'Exiting…'; });
+    document.querySelectorAll('.tc-exit-room').forEach(b => { b.disabled = true; b.textContent = window.__tempChatReloading ? 'Reloading…' : 'Exiting…'; });
     const token = window.TempChatNotifications.token();
     joinedChat = false; clearInterval(presenceHeartbeat); clearTimeout(typingTimeout);
     recordSendOnStop = false; try { stopVoiceRecording(false); } catch (_) {}
@@ -30,13 +30,20 @@
     // A fresh document disposes all timers, media decoders, object URLs and JS
     // message state; replace removes the active-room URL from this history entry.
     if (reason) { try { sessionStorage.setItem('tempchat_exit_notice', reason.slice(0, 180)); } catch (_) {} }
-    window.location.replace('/');
+    window.location.replace(nextUrl);
   }
   function button(parent) {
     if (!parent) return;
     const b = document.createElement('button'); b.type = 'button'; b.className = 'tc-exit-room'; b.textContent = 'Exit Room'; b.title = 'Leave this room (only your session)'; b.onclick = () => leave(); parent.append(b);
   }
-  window.TempChatExit = { force: reason => leave(true, reason) };
+  window.TempChatExit = {
+    force: reason => leave(true, reason),
+    reload: url => {
+      const next = new URL(url, location.origin);
+      if (next.origin !== location.origin) throw new Error("Reload must stay on this site.");
+      window.__tempChatReloading = true; return leave(true, "", next.href);
+    },
+  };
   button(document.querySelector('.tc-room-tools'));
   button(document.querySelector('.call-screen-header'));
   const guide = document.querySelector('.guide-sections');

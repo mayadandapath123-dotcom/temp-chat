@@ -137,6 +137,15 @@
   };
   for (const id of ['cancel-action', 'cancel-action-top']) $(id).onclick = () => $('action-dialog').close();
   $('room-search').oninput = renderRooms; $('room-filter').onchange = renderRooms; $('refresh-button').onclick = refresh;
+  for (const link of document.querySelectorAll('.admin-reload-link')) link.addEventListener('click', event => {
+    event.preventDefault();
+    if ($('action-dialog').open && !confirm('Reload the panel and discard this unfinished moderation form? No action will be submitted.')) return;
+    if (navigator.onLine === false && !confirm('Your device appears offline. Reloading may fail until internet access returns. Continue?')) return;
+    const url = new URL('/admin', location.origin); url.searchParams.set('_reload', String(Date.now()));
+    location.replace(url.href);
+  });
+  window.addEventListener('online', () => { if (csrf && !document.hidden) refresh(); });
+  window.addEventListener('pageshow', event => { if (event.persisted && csrf) refresh(); });
   $('login-form').onsubmit = async e => {
     e.preventDefault(); $('login-button').disabled = true; $('login-error').textContent = '';
     const key = $('admin-key').value; $('admin-key').value = '';

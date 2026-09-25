@@ -44,13 +44,7 @@
         const note = document.createElement('p'); note.className = 'tc-admin-entry-note'; note.textContent = reason; joinForm?.before(note);
       }
     } catch (_) {}
-    const guide = document.querySelector('.guide-sections');
-    if (guide) {
-      const section = document.createElement('div'); section.className = 'guide-section-item';
-      const h = document.createElement('h5'); h.textContent = '◆ Transparent moderation';
-      const p = document.createElement('p'); p.textContent = 'The owner console shows live room/member metadata and approximate presence durations. A verified Admin must join visibly to see new chat messages. Visits are announced and badged. There is no old-message archive or view-once recovery. Admin can remove sessions, lock new entry temporarily, clear a room or end its call.';
-      section.append(h, p); guide.prepend(section);
-    }
+
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup); else setup();
 })();
