@@ -9,7 +9,7 @@
   const time = value => value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
   function toast(message) { $('admin-toast').textContent = message; $('admin-toast').classList.remove('hidden'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('admin-toast').classList.add('hidden'), 4000); }
   async function api(url, data) {
-    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12000);
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), url.startsWith('archive/') ? 45000 : 12000);
     try {
       const response = await fetch('/api/admin/' + url, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) }, ...(data === undefined ? {} : { body: JSON.stringify(data) }), signal: controller.signal });
       const value = await response.json();
@@ -18,13 +18,15 @@
     } finally { clearTimeout(timer); }
   }
   function loggedOut(message = '') {
+    window.TempChatArchiveViewer?.setAuthenticated(false);
     authGeneration++; csrf = ''; snapshot = null; selected = null; clearTimeout(pollTimer); clearTimeout(expiryTimer);
     $('console-view').classList.add('hidden'); $('login-view').classList.remove('hidden');
     $('room-list').replaceChildren(); $('room-detail').replaceChildren(); $('audit-list').replaceChildren(); $('login-error').textContent = message;
     if ($('action-dialog').open) $('action-dialog').close();
   }
   function loggedIn(session) {
-    authGeneration++; csrf = session.csrf; $('login-view').classList.add('hidden'); $('console-view').classList.remove('hidden');
+    authGeneration++; csrf = session.csrf;
+    window.TempChatArchiveViewer?.setAuthenticated(true); $('login-view').classList.add('hidden'); $('console-view').classList.remove('hidden');
     $('session-expiry').textContent = `Expires ${time(session.expiresAt)}`;
     clearTimeout(expiryTimer); expiryTimer = setTimeout(() => loggedOut('Session expired. Sign in again.'), Math.max(0, Math.min(8 * 3600000, session.expiresAt - Date.now())));
     refresh();
@@ -118,9 +120,9 @@
       lock: ['Lock new entry?', 'New non-admin sessions cannot enter for one hour. Current members stay connected.'],
       unlock: ['Unlock this room?', 'New sessions will be able to enter with this room code again.'],
       kick: ['Remove this session?', `Remove ${member?.username || ''} (session …${member?.id.slice(-8) || ''}). Their call and room session will end. This is not a permanent identity ban.`],
-      clear: ['Clear the room chat?', 'Messages, reply metadata and shared appearance will be reset for everyone. Already captured content cannot be recalled.'],
+      clear: ['Clear the room chat?', 'Messages, reply metadata and shared appearance will be reset for everyone. Already captured content cannot be recalled. Retained admin archives are NOT deleted by this action.'],
       'end-call': ['End this room’s call?', 'All call participants will be disconnected from this call. Their chat room stays open.'],
-      'close-room': ['Close and lock the room?', 'Clear the room, end its call, remove all current sessions and block new non-admin entry for one hour.'],
+      'close-room': ['Close and lock the room?', 'Clear the live room, end its call, remove all sessions and lock entry for one hour. Retained admin archives are NOT deleted.'],
     };
     const [title, description] = descriptions[action]; $('action-title').textContent = title; $('action-description').textContent = description;
     const needsCode = ['clear', 'end-call', 'close-room'].includes(action);
@@ -155,5 +157,6 @@
   };
   $('logout-button').onclick = async () => { try { await api('logout', {}); loggedOut('You have signed out. Admin room sessions have ended.'); } catch (error) { if (error.status === 401) loggedOut(); else $('console-error').textContent = 'Could not confirm logout: ' + error.message; } };
   document.addEventListener('visibilitychange', () => { if (!document.hidden && csrf) refresh(); });
+  window.TempChatArchiveViewer?.mount({ api, onUnauthorized: () => loggedOut('Session ended. Sign in again.') });
   api('session').then(s => { if (s.authenticated) loggedIn(s); else if (!s.configured) $('login-error').textContent = 'Owner setup needed: generate an ADMIN_KEY and add it in Render Environment. See ADMIN-SETUP.md.'; }).catch(e => $('login-error').textContent = e.message);
 })();

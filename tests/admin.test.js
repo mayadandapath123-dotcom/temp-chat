@@ -13,7 +13,7 @@ async function state(){const r=await req('snapshot');assert.equal(r.status,200);
 async function action(kind,room,extra={}){const data=await state();const r=data.rooms.find(r=>r.room===room);return req('action',{action:kind,room,roomInstanceId:r.instanceId,...extra});}
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 before(async()=>{
- server=spawn(process.execPath,['server.js'],{env:{...process.env,PORT:'0',ADMIN_KEY:key,NODE_ENV:'test',RENDER:''},stdio:['ignore','pipe','pipe']});
+ server=spawn(process.execPath,['server.js'],{env:{...process.env, ARCHIVE_DATABASE_URL:"", ARCHIVE_ENCRYPTION_KEY:"", ARCHIVE_CLEANUP_TOKEN:"",PORT:'0',ADMIN_KEY:key,NODE_ENV:'test',RENDER:''},stdio:['ignore','pipe','pipe']});
  base=await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error('Startup timeout')),5000);server.stdout.on('data',d=>{const m=String(d).match(/http:\/\/localhost:(\d+)/);if(m){clearTimeout(t);resolve('http://127.0.0.1:'+m[1]);}});server.once('exit',c=>reject(new Error('Server exited '+c)));});
  const login=await req('login',{key},{auth:false});assert.equal(login.status,200);cookie=login.headers.get('set-cookie').split(';')[0];csrf=login.data.csrf;
 });
@@ -113,4 +113,10 @@ test('missing owner key disables admin login without affecting public chat',asyn
  const express=require('express'),http=require('node:http'),createAdmin=require('../lib/admin-control');const app=express(),s=http.createServer(app);
  const control=createAdmin({app,io:{sockets:{sockets:new Map()},to:()=>({emit(){}})},calls:new Map(),controls:{},env:{}});s.listen(0,'127.0.0.1');await once(s,'listening');const origin='http://127.0.0.1:'+s.address().port;
  try{const r=await fetch(origin+'/api/admin/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({key:'anything'})});assert.equal(r.status,503);const status=await(await fetch(origin+'/api/admin/session')).json();assert.equal(status.configured,false);}finally{control.close();await new Promise(r=>s.close(r));}
+});
+test('archive endpoints enforce admin auth and deletion enforces CSRF/confirmation',async()=>{
+ for(const route of ['archive/status','archive/rooms','archive/messages?instance=bad','archive/media?chunk=bad&event=bad']) assert.equal((await req(route,undefined,{auth:false})).status,401);
+ assert.equal((await req('archive/delete',{instance:'bad',confirmation:'DELETE'},{auth:false})).status,401);
+ assert.equal((await req('archive/delete',{instance:'bad',confirmation:'DELETE'},{headers:{'x-csrf-token':'wrong'}})).status,403);
+ assert.equal((await req('archive/delete',{instance:'bad',confirmation:'wrong'})).status,400);
 });

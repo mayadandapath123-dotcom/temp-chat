@@ -479,6 +479,7 @@ if (joinButton) {
 }
 
 function joinChat() {
+  if (!window.TempChatArchive?.allowJoin()) return;
   const rawUsername = usernameInput ? usernameInput.value.trim() : "";
   const rawRoom = roomInput ? roomInput.value.trim().toUpperCase() : "";
 
@@ -509,6 +510,7 @@ function joinChat() {
     username: currentUsername,
     room: currentRoom,
     asAdmin: window.TempChatAdminMode === true,
+    archiveConsent: window.TempChatArchive?.consent(),
   });
 
   if (roomName) roomName.textContent = `#${currentRoom}`;
@@ -2004,7 +2006,7 @@ socket.on("clear-chat", () => {
 
 if (resetButton) {
   resetButton.addEventListener("click", () => {
-    if (confirm("Reset and clear all messages in this room?")) {
+    if (confirm("Clear live chat for everyone? If admin archiving is enabled, retained archives are NOT deleted and remain for up to 7 days or until admin deletion.")) {
       socket.emit("reset-chat");
       playSfx("reset");
     }
@@ -2884,8 +2886,8 @@ socket.on("disconnect", () => {
       section("🎙️", "Voice Notes", "Hold or tap the mic in the composer to record up to 60 seconds, with a scrubbable waveform.") +
       section("🔔", "Notifications", "Open <strong>⋯ → Joined-room notifications</strong>. Permission is per device and site address. Enable joined-room notifications to request browser permission. Alerts only work while this chat page stays joined, connected and running in a background tab/app. Exit, close or disconnect to stop them. A fully suspended browser may not deliver alerts. No server Web Push is used.") +
       section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +
-      section("🔴", "Reset Room", "Wipes the whole room's chat for everyone, instantly.") +
-      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens. Notifications only come from live joined pages; previews already shown may remain in phone notification history.");
+      section("🔴", "Reset Room", "Clears the live room view for everyone. Enabled admin archives are retained until expiry or admin deletion.") +
+      section("🔒", "Privacy &amp; Data", "Content is server-relayed, not end-to-end encrypted. When the disclosed admin archive is enabled, text, normal photos and voice notes are retained for admin review for up to 7 days; view-once photos and call streams are excluded. Reset clears the live view only, not archives. Screenshots and recipients retaining content cannot be prevented. Notifications only come from live joined pages.");
 
     function section(icon, title, text) {
       return '<div class="guide-section-item"><h5>' + icon + " " + title + "</h5><p>" + text + "</p></div>";
@@ -2894,7 +2896,7 @@ socket.on("disconnect", () => {
     const banner = body ? body.querySelector(".guide-hero-banner p") : null;
     if (banner) {
       banner.textContent =
-        "No phone numbers, no signups, no message database. Content is temporary, but recipients can capture or retain it.";
+        "No phone numbers or signups. Read the retention notice before joining: enabled admin archives retain eligible content for up to 7 days. Recipients can also capture or retain content.";
     }
   })();
 
@@ -3951,8 +3953,8 @@ socket.on("disconnect", () => {
       section("🎙️", "Voice Notes", "Hold or tap the mic in the composer to record up to 60 seconds, with a scrubbable waveform.") +
       section("🔔", "Notifications", "Open <strong>⋯ → Joined-room notifications</strong>. Permission is per device and site address. Enable joined-room notifications to request browser permission. Alerts only work while this chat page stays joined, connected and running in a background tab/app. Exit, close or disconnect to stop them. A fully suspended browser may not deliver alerts. No server Web Push is used.") +
       section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +
-      section("🔴", "Reset Room", "Wipes the whole room's chat for everyone, instantly.") +
-      section("🔒", "Privacy &amp; Data", "No accounts or message database. Content is server-relayed, not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are held temporarily in memory. Screenshots cannot be prevented. Other participants may retain content; closing your tab does not erase their screens. Notifications only come from live joined pages; previews already shown may remain in phone notification history.");
+      section("🔴", "Reset Room", "Clears the live room view for everyone. Enabled admin archives are retained until expiry or admin deletion.") +
+      section("🔒", "Privacy &amp; Data", "Content is server-relayed, not end-to-end encrypted. When the disclosed admin archive is enabled, text, normal photos and voice notes are retained for admin review for up to 7 days; view-once photos and call streams are excluded. Reset clears the live view only, not archives. Screenshots and recipients retaining content cannot be prevented. Notifications only come from live joined pages.");
 
     function section(icon, title, text) {
       return '<div class="guide-section-item"><h5>' + icon + " " + title + "</h5><p>" + text + "</p></div>";
@@ -3961,7 +3963,7 @@ socket.on("disconnect", () => {
     const banner = body ? body.querySelector(".guide-hero-banner p") : null;
     if (banner) {
       banner.textContent =
-        "No phone numbers, no signups, no message database. Content is temporary, but recipients can capture or retain it.";
+        "No phone numbers or signups. Read the retention notice before joining: enabled admin archives retain eligible content for up to 7 days. Recipients can also capture or retain content.";
     }
   })();
 

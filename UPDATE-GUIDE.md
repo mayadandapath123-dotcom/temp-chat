@@ -1,93 +1,95 @@
-# TempChat v10 — Refresh, settings-only themes and manual cleanup
+# TempChat v11 — encrypted seven-day Neon archives
 
-Base: latest GitHub main **96dd44963ae02240bcd1497f3f13749c9c997b33** (protected admin console release). This package contains the complete current source, not just a patch.
+Base: GitHub main **22c73218ab5a2d7603025a539bdc4d664db5da79** (final refresh/settings update).
 
-## Requested changes
+## Features
 
-### Refresh and reconnect
+- Optional dedicated Neon/PostgreSQL archive for **text/replies, normal photos and voice notes**.
+- **View-once photos and call streams excluded.**
+- Brotli-compressed, AES-256-GCM-encrypted binary batches. No plaintext history file is written to the server filesystem.
+- Owner-only chat-style viewer at `/admin` → **7-day archives**, with paginated sessions/messages and on-demand image/audio loading.
+- Fixed seven-day expiry, manual archive deletion, expiry cleanup job and status/storage/failure reporting.
+- As requested, **Reset Chat retains the admin archive**. The confirmation and retention notice say so clearly.
+- Participants must acknowledge the retention policy before joining when the archive is enabled. Old clients must reload; silent retention through an obsolete no-retention client is not allowed.
 
-A visible **↻ Refresh** control is available next to Exit in chat, on the join screen, in the call header and in Settings.
+Admin auth, announced live moderation, joined-page notifications (not closed-page Push), refresh/recovery, Settings-only themes, replies, links and camera features remain. Keep your existing ADMIN_KEY.
 
-It opens two choices:
-- **Check / reconnect**: verifies the current Socket.IO session. Healthy connections and calls are left alone. A stale/disconnected connection is repaired, and the current room is rejoined if necessary. Visible messages and the composer stay on the page, but an obsolete call is stopped and must be joined again manually.
-- **Reload page**: asks for confirmation, ends this tab's call/media and room connection, then loads a fresh page. Temporary chat, unsent draft, replies and local media are cleared. Only the room code, username and admin-mode flag are kept briefly in sessionStorage to prefill rejoining. No messages or media are saved. It does **not** automatically join or start a camera/microphone after reload.
+## Install this new ZIP
 
-Other members are not sent Reset Chat. If you were the last member, the existing empty-room cleanup can discard the room's temporary state, including appearance. A reconnect/reload is a new connection; old-session receipt/reply identities may no longer be usable. Locked rooms still require permission to re-enter, and admin authorization is not bypassed.
-
-The page performs a bounded connection check on return after a long background pause, on network restoration, or on back/forward-cache restoration. Checks are debounced; it does not continuously ping at high frequency, automatically reload, replay messages or auto-join calls. Offline status is shown instead of starting an unnecessary reconnect loop. Failed checks remain recoverable through the visible controls.
-
-A full reload uses a cache-busting document URL. It does not erase all browser data, unregister the current notification worker, log out the admin console, or force unsupported browser-cache behavior. Static release assets are versioned.
-
-**If the browser's JavaScript thread is completely frozen, an in-page control cannot be guaranteed to respond. Use browser reload or close/reopen the app/tab.** A suspended phone can also stop session-only notifications until the page runs and reconnects again.
-
-### Admin console refresh
-
-The owner console keeps **Refresh data** (snapshot only) and adds **Reload panel** (fresh page). Reload is also available on its login page. Reloading an authenticated console keeps the normal admin session cookie; an expired/restarted server session still requires login. An unfinished moderation form prompts before it is discarded. Reload does not submit that form or log out unrelated chat tabs.
-
-### Themes moved to Settings only
-
-The front chat toolbar no longer has a Room theme button or “Shared with everyone” label. Use:
-
-**⋯ Settings → Shared themes & wallpaper**
-
-All palettes, compression, shared wallpaper behavior, overlays and existing room appearance remain working. The freed toolbar space is used for Refresh, connection status and Exit Room.
-
-### User manual cleanup
-
-The public manual's “Transparent moderation” / admin explanation section has been removed. Refresh guidance and the new theme location are documented there.
-
-**Actual admin entry announcements, presence indicators, verified badges, access controls and the existing join-screen disclosure are retained.** This is manual text cleanup, not hidden admin access. The private owner console's ADMIN-SETUP.md remains available for owner setup.
-
-## Install and deploy this final combined ZIP
-
-Save **TempChat-Final-Refresh.zip** to Downloads. Use this filename, not an earlier ZIP:
+Save **TempChat-Neon-Archives.zip** to Downloads:
 
 ```bash
 cd ~/Downloads &&
-unzip -o TempChat-Final-Refresh.zip -d "$HOME/Downloads" &&
-bash "$HOME/Downloads/temp-chat-refresh/deploy-existing.sh"
+unzip -o TempChat-Neon-Archives.zip -d "$HOME/Downloads" &&
+bash "$HOME/Downloads/temp-chat-archives/deploy-existing.sh"
 ```
 
-The installer uses **`~/Documents/Projects/temp-chat`**, verifies the exact repository/branch/base commit, refuses uncommitted/newer work, backs up the source, copies only release files and runs tests. Type **DEPLOY** to commit and push when it asks.
+The script uses **`~/Documents/Projects/temp-chat`**, checks repository/base/cleanliness, makes a private backup, copies the release file allowlist and runs tests. Type **DEPLOY** to commit/push, or press Enter for local testing first.
 
-**Keep your existing Render ADMIN_KEY unchanged. No new key generation or notification-key setup is needed.** The installer does not copy or stage secret key files. It does not touch the typing website or change Render billing/workspaces.
+This release includes a GitHub Actions workflow. If push authentication lacks workflow-write permission, fix that permission/SSH setup and push the already-created commit again. Do not force-push or reset your project.
 
-Use the existing TempChat service for https://temp-chat-5yum.onrender.com/ with repository `mayadandapath123-dotcom/temp-chat`, branch `main`, build `npm ci`/`npm install`, start `npm start`/`node server.js`. Auto-Deploy can deploy the push; otherwise use Manual Deploy → Deploy latest commit.
+## Required archive setup
 
-After it is Live, close/reopen old mobile/Home Screen windows or hard-refresh desktop once to load the new scripts. Sign into `/admin` again if deployment restarted the server and expired the old in-memory admin session. Your existing key is still the correct key if you did not change it.
+Follow **NEON-ARCHIVE-SETUP.md**:
+1. Create a NEW empty Neon project in your existing Free organization. Leave the typing project untouched.
+2. Generate archive secrets locally; never paste the output or Neon connection string into chat.
+3. Add ARCHIVE_DATABASE_URL, ARCHIVE_ENCRYPTION_KEY and ARCHIVE_CLEANUP_TOKEN in the **TempChat** Render service. Keep ADMIN_KEY unchanged.
+4. Save/redeploy and verify archive status in the owner console.
+5. Add the cleanup URL/token as GitHub Actions repository secrets, run the included cleanup workflow manually once, and leave the hourly schedule enabled.
+
+Neon's current published Free database allowance is per project, not per database/branch. Confirm your plan in Neon Console. The application does not create provider resources, provision a paid plan or change billing automatically.
+
+Before configuration, public chat works with archiving off. Do not assume data is retained until the archive status is ready and a test message appears. Archive errors/full capacity do not stop live messages; dropped-write warnings are visible to the admin.
+
+## Privacy change
+
+The old blanket no-retention wording is replaced. Eligible content can now be reviewed later by the admin for up to seven days; live Reset does not erase it. User acknowledgements are enforced at join. Media that was view-once is never archived, and encrypted batch lists contain no media bytes until an authenticated viewer requests them.
+
+Read the setup guide's limits, cleanup scheduling, provider-backup retention, queue failure behavior and key-backup instructions. Compression does not guarantee huge media savings or unlimited free storage.
+
+## Deployment details
+
+Continue using the existing TempChat service/repo/branch:
+- Site: https://temp-chat-5yum.onrender.com/
+- Repo: `mayadandapath123-dotcom/temp-chat`, branch `main`
+- Build: `npm ci` / `npm install`
+- Start: `npm start` / `node server.js`
+
+Auto-Deploy can deploy the push; otherwise Manual Deploy → Deploy latest commit. Environment changes require restart/redeploy. Close/reopen old chat windows afterward so the retention notice and new acknowledgement protocol load. Deployment does not update the typing website or its database.
 
 ## Safe push after local testing
-
-After the installer succeeded but you stopped at its DEPLOY prompt:
 
 ```bash
 cd ~/Documents/Projects/temp-chat &&
 npm test &&
-git add -- server.js package.json package-lock.json .gitignore .env.example UPDATE-GUIDE.md ADMIN-SETUP.md PUSH-SETUP.md TEST-REPORT.md public/admin-client.js public/app.js public/camera-manager.js public/camera-zoom.js public/enhancements.css public/exit-room.js public/icons/apple-touch-icon.png public/icons/badge-96.png public/icons/icon-192.png public/icons/icon-512.png public/index.html public/links.js public/manifest.webmanifest public/notifications.js public/push-store.js public/push-worker-core.js public/refresh.js public/replies.js public/room-features.css public/room-features.js public/style.css public/sw.js public/zoom-ui.js admin/admin.css admin/admin.js admin/index.html lib/admin-control.js lib/push-service.js lib/room-features.js scripts/generate-admin-key.js scripts/generate-push-keys.js tests/admin.test.js tests/camera-manager.test.js tests/links.test.js tests/notifications.test.js tests/push-service.test.js tests/room-features.test.js tests/zoom.test.js &&
-git commit -m "Add refresh recovery and move themes into settings" &&
+git add -- server.js package.json package-lock.json .gitignore .env.example UPDATE-GUIDE.md NEON-ARCHIVE-SETUP.md ADMIN-SETUP.md PUSH-SETUP.md TEST-REPORT.md public/admin-client.js public/app.js public/archive-notice.js public/camera-manager.js public/camera-zoom.js public/enhancements.css public/exit-room.js public/icons/apple-touch-icon.png public/icons/badge-96.png public/icons/icon-192.png public/icons/icon-512.png public/index.html public/links.js public/manifest.webmanifest public/notifications.js public/push-store.js public/push-worker-core.js public/refresh.js public/replies.js public/room-features.css public/room-features.js public/style.css public/sw.js public/zoom-ui.js admin/admin.css admin/admin.js admin/archive-viewer.css admin/archive-viewer.js admin/index.html lib/admin-control.js lib/archive-codec.js lib/archive-routes.js lib/chat-archive.js lib/push-service.js lib/room-features.js scripts/generate-admin-key.js scripts/generate-archive-secrets.js scripts/generate-push-keys.js tests/admin.test.js tests/archive-codec.test.js tests/archive-postgres.test.js tests/camera-manager.test.js tests/links.test.js tests/notifications.test.js tests/push-service.test.js tests/room-features.test.js tests/zoom.test.js .github/workflows/archive-cleanup.yml &&
+git commit -m "Add encrypted Neon archives with seven-day retention" &&
 git push origin main
 ```
 
-Never stage `admin-key.env`, `push-keys.env`, real `.env` files or private backup archives.
+Never stage actual key/env files or a private backup. If already committed, inspect git status/log before pushing again.
 
-## Rollback
+## Rollback and stopping retention
 
-If HEAD is exactly **Add refresh recovery and move themes into settings**, and no newer changes should be reverted:
+A code rollback can remove the archive UI/jobs but **does not erase data already stored in Neon**. Before permanently disabling the feature, delete retained archives or keep an authenticated expiry cleanup service operating until all records are purged. Review Neon restore/backup retention too.
+
+If HEAD is exactly **Add encrypted Neon archives with seven-day retention**, inspect the change and, only if appropriate:
 
 ```bash
 cd ~/Documents/Projects/temp-chat
 git revert --no-edit HEAD && git push origin main
 ```
 
-Check `git log -3 --oneline` first. Your private pre-update source archive remains under `~/Documents/Projects/temp-chat-backups/`.
+Never overwrite or discard the encryption key while retained archives still need to be read. Keep private source backups out of Git.
 
-## Maintainer notes
+## Maintainer files
 
-- `public/refresh.js`: recovery dialog, checked reconnection, wake handling, explicit full reload and short-lived identity prefill.
-- `public/exit-room.js`: shared safe cleanup for Exit, moderation exit and reload; existing Exit semantics remain unchanged.
-- `server.js`: `session-health` ack contains only the requesting socket's own room/role/call membership. It never changes membership or resets a room.
-- `public/room-features.js`: themes are accessible only through Settings; front toolbar becomes connection tools.
-- `public/admin-client.js`: user-manual insertion removed; verified roles and announcements retained.
-- `admin/`: separate data refresh/reload controls and mobile layout adjustment.
+- `lib/chat-archive.js`: dedicated DB initialization, bounded capture queue, encrypted batch writes, quota guard, metadata listing, paginated decrypt/read/media, deletion and expiry cleanup.
+- `lib/archive-codec.js`: bounded lossless compression, AES-GCM and strict eligible-content normalization.
+- `lib/archive-routes.js`: existing admin-auth/CSRF protected APIs, with auth rechecked after asynchronous reads.
+- `public/archive-notice.js`: visible retention policy and explicit join acknowledgement.
+- `admin/archive-viewer.js` / `.css`: owner-only chat-style read-only viewer.
+- `scripts/generate-archive-secrets.js`: separate encryption and cleanup secrets, restrictive local permissions, refuses overwrite.
+- `.github/workflows/archive-cleanup.yml`: hourly authenticated expiration deletion; provider secrets must be configured.
 
-No new production dependency. Joined-page-only notifications, admin security, replies, receipts, camera flip/zoom, photo/voice handling and safe URLs are retained. See TEST-REPORT.md for tested behavior and real-device checks.
+New production dependency: `pg`. Normal `npm test` does not use real Neon credentials; the actual Postgres integration test requires an explicit localhost-only test URL and otherwise skips.

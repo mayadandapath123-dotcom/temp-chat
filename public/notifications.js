@@ -150,7 +150,7 @@
     window.addEventListener('pagehide', () => invalidate({ leaving: true }));
     window.addEventListener('pageshow', event => {
       // A back/forward-cache restore must rejoin, not reuse a stale session lease.
-      if (event.persisted && joinedChat && socket.connected) socket.emit('join-room', { username: currentUsername, room: currentRoom, asAdmin: window.TempChatAdminMode === true });
+      if (event.persisted && joinedChat && socket.connected) socket.emit('join-room', { username: currentUsername, room: currentRoom, asAdmin: window.TempChatAdminMode === true, archiveConsent: window.TempChatArchive?.consent() });
     });
     window.addEventListener('storage', event => {
       if (event.key === PREF) { enabled = event.newValue === 'true'; invalidate(); }

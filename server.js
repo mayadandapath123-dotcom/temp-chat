@@ -42,21 +42,37 @@ app.post("/api/push/unregister", express.json({ limit: "16kb" }), (req, res) => 
 /*
   TEMP CHAT & CALL ARCHITECTURE
   -----------------------------
-  All chat messages, view-once photos, voice notes, and calls
-  are strictly EPHEMERAL and in-memory only.
+  Live rooms remain temporary. With explicit retention acknowledgement,
+  eligible content is separately compressed/encrypted into a 7-day archive.
+  View-once photos and call streams are never sent to that archive.
 */
 
 const features = require("./lib/room-features")(io);
 const { randomUUID } = require("node:crypto");
 const PRESENCE_TIMEOUT = 12000;
 const calls = new Map(); // room -> Map(socketId -> { username, callType, videoEnabled, audioEnabled })
+const archive = require("./lib/chat-archive")();
+archive.start();
 const admin = require("./lib/admin-control")({
-  app, io, calls,
+  app, io, calls, archive,
   controls: {
     eject(socket, reason) { forceLeave(socket, reason); },
     clear(room) { clearRoom(room); },
     endCall(room) { endRoomCall(room); },
   },
+});
+
+app.get("/api/archive/policy", (_req, res) => res.set("Cache-Control", "no-store").json(archive.policy()));
+let lastArchiveCleanupRequest = 0;
+app.post("/api/archive/cleanup", async (req, res) => {
+  const crypto = require("node:crypto"), secret = process.env.ARCHIVE_CLEANUP_TOKEN || "";
+  const supplied = String(req.get("authorization") || "").replace(/^Bearer /, "");
+  if (!/^[A-Za-z0-9_-]{43}$/.test(secret)) return res.status(503).json({ error: "Scheduled cleanup is not configured." });
+  if (supplied.length > 200 || !crypto.timingSafeEqual(crypto.createHash('sha256').update(secret).digest(), crypto.createHash('sha256').update(supplied).digest())) return res.status(401).json({ error: "Unauthorized." });
+  if (Date.now() - lastArchiveCleanupRequest < 60000) return res.status(429).json({ error: "Wait a minute between cleanup requests." });
+  lastArchiveCleanupRequest = Date.now();
+  try { res.set("Cache-Control", "no-store").json({ ok: true, ...await archive.cleanup("external") }); }
+  catch (_) { res.status(503).json({ error: "Archive cleanup failed. Check database availability." }); }
 });
 
 function clearRoom(room) {
@@ -144,6 +160,7 @@ io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id);
   features.attach(socket);
   pushService.attach(socket);
+  socket.emit("archive-policy", archive.policy());
 
   // A read-only liveness check: never joins, resets or exposes another room.
   socket.on("session-health", (_data, ack) => {
@@ -159,6 +176,7 @@ io.on("connection", (socket) => {
     username = String(username || "").trim().slice(0, 24);
     room = String(room || "").trim().toUpperCase().slice(0, 24);
     if (!username || !room) return;
+    if (archive.policy().enabled && data.archiveConsent !== "archive-v1") return socket.emit("join-error", { error: "This site retains text, normal photos and voice notes for admin review for up to 7 days. Reload, read the retention notice and acknowledge it before joining." });
     if (socket.moderationRemoved) return socket.emit("join-error", { error: "This session was removed. Open a new page to rejoin if room entry is unlocked." });
     let moderator = null;
     if (data.asAdmin === true) {
@@ -245,6 +263,7 @@ io.on("connection", (socket) => {
       id, clientId, room: socket.room, ...features.record(socket, id, { kind: "text", text: message }), reply: quote.value, username: socket.username, isAdmin: Boolean(socket.isAdmin), message,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
+    archive.capture(socket, admin.roomInstance(socket.room), "text", { id, message, reply: quote.value });
     admin.activity(socket, "text", Buffer.byteLength(message), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
     pushService.notify(socket, { id, title: socket.username, body: message });
     if (typeof ack === "function") ack({ ok: true, id });
@@ -262,6 +281,7 @@ io.on("connection", (socket) => {
       mime: data.mime || "audio/webm",
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
+    archive.capture(socket, admin.roomInstance(socket.room), "voice", { ...data, id });
     admin.activity(socket, "voice", admin.size(data.audio), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
     pushService.notify(socket, { id, title: socket.username, body: "Sent a voice note" });
   });
@@ -279,6 +299,7 @@ io.on("connection", (socket) => {
       isViewOnce: data.isViewOnce !== false,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
+    archive.capture(socket, admin.roomInstance(socket.room), "photo", { ...data, id });
     admin.activity(socket, "photo", admin.size(data.image), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
     pushService.notify(socket, { id, title: socket.username, body: data.isViewOnce !== false ? "Sent a view-once photo" : "Sent a photo" });
   });
@@ -495,3 +516,12 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`Temp Chat running on http://localhost:${server.address().port}`);
 });
 
+
+let shuttingDown = false;
+for (const signal of ['SIGTERM','SIGINT']) process.on(signal, async () => {
+  if (shuttingDown) return; shuttingDown = true;
+  const deadline = setTimeout(() => process.exit(0), 9000); deadline.unref();
+  io.close(); server.close();
+  try { await archive.close(); } catch (_) {}
+  process.exit(0);
+});

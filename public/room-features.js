@@ -1,5 +1,5 @@
 /* TempChat v5.1: room receipts and shared appearance.
-   No third-party libraries, no persisted messages/wallpapers, no screenshot-blocking claims. */
+   Live room features only; optional retained content is handled by the separate archive service. */
 (function () {
   'use strict';
   const records = new Map(), pending = new Map();
@@ -253,7 +253,7 @@
   }
   socket.on('room-ready', () => { ready = true; flushReceipts(); });
   socket.on('connect', () => {
-    if (joinedChat && currentRoom && currentUsername) socket.emit('join-room', { room: currentRoom, username: currentUsername, asAdmin: window.TempChatAdminMode === true });
+    if (joinedChat && currentRoom && currentUsername) socket.emit('join-room', { room: currentRoom, username: currentUsername, asAdmin: window.TempChatAdminMode === true, archiveConsent: window.TempChatArchive?.consent() });
   });
   socket.on('disconnect', () => {
     ready = false;
@@ -266,7 +266,7 @@
   });
   const guide = document.querySelector('.guide-sections');
   if (guide) {
-    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts & shared themes'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Settings → Shared themes & wallpaper for shared colours and a compressed photo wallpaper. The server relays content: this is not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are temporarily kept in memory; nothing is added to a database by these features.'));
+    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts & shared themes'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Settings → Shared themes & wallpaper for shared colours and a compressed photo wallpaper. The server relays content: this is not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are temporarily kept in memory; eligible chat content may be retained in the disclosed 7-day admin archive.'));
     guide.prepend(item);
   }
 })();

@@ -10,9 +10,9 @@
     .hidden { display: none !important; }
   </style>
 
-  <link rel="stylesheet" href="/style.css?v=10" />
-  <link rel="stylesheet" href="/room-features.css?v=10">
-  <link rel="stylesheet" href="/enhancements.css?v=10">
+  <link rel="stylesheet" href="/style.css?v=11" />
+  <link rel="stylesheet" href="/room-features.css?v=11">
+  <link rel="stylesheet" href="/enhancements.css?v=11">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,7 +31,7 @@
           <span class="icon-sparkle">✦</span>
           <span class="icon-bubble">💬</span>
         </div>
-        <span class="eyebrow-pill">TEMPORARY CHAT • NO CHAT DATABASE</span>
+        <span class="eyebrow-pill">TEMPORARY ROOMS</span>
       </div>
 
       <h1 class="hero-brand-title">TempChat</h1>
@@ -53,6 +53,11 @@
         </button>
       </div>
 
+      <div id="archive-retention-notice" class="tc-archive-notice">
+        <strong>Chat retention</strong>
+        <p id="archive-retention-status">If archiving is enabled, text, normal photos and voice notes are kept for admin review for up to 7 days. View-once photos and calls are excluded. Reset clears live chat only.</p>
+        <label id="archive-ack-label" class="hidden"><input type="checkbox" id="archive-retention-ack"> I understand the 7-day admin retention policy.</label>
+      </div>
       <form id="join-form" class="join-form">
         <!-- USERNAME INPUT WITH RANDOMIZE -->
         <div class="input-group">
@@ -483,9 +488,9 @@
 
       <div class="guide-modal-body">
         <div class="guide-hero-banner glass-card">
-          <div class="guide-badge">✦ TEMPORARY ROOMS • NO CHAT DATABASE</div>
+          <div class="guide-badge">✦ TEMPORARY ROOMS</div>
           <h4>Ephemeral Calls, Media & Messaging</h4>
-          <p>No phone numbers, no signups, and zero database logs. Everything is stored strictly in memory and vanishes when closed.</p>
+          <p>No phone numbers or signups. Read the retention notice before joining: enabled admin archives keep eligible content for up to 7 days.</p>
           <a href="/manual" target="_blank" class="full-manual-link">Open Full Pamphlet Page ↗</a>
         </div>
 
@@ -512,7 +517,7 @@
 
           <div class="guide-section-item">
             <h5>🔴 Reset Room Wipe</h5>
-            <p>Click the red <strong>Reset</strong> button anytime to instantly wipe the entire room chat history for everyone.</p>
+            <p>Click the red <strong>Reset</strong> button anytime to clear the live room view for everyone. Enabled admin archives remain until expiry or admin deletion.</p>
           </div>
         </div>
       </div>
@@ -530,18 +535,19 @@
   <div id="toast-container" class="toast-container"></div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/links.js?v=10"></script>
-  <script src="/camera-manager.js?v=10"></script>
-  <script src="/camera-zoom.js?v=10"></script>
-  <script src="/notifications.js?v=10"></script>
-  <script src="/app.js?v=10"></script>
-  <script src="/room-features.js?v=10"></script>
-  <script src="/replies.js?v=10"></script>
-  <script src="/zoom-ui.js?v=10"></script>
+  <script src="/links.js?v=11"></script>
+  <script src="/camera-manager.js?v=11"></script>
+  <script src="/camera-zoom.js?v=11"></script>
+  <script src="/notifications.js?v=11"></script>
+  <script src="/app.js?v=11"></script>
+  <script src="/archive-notice.js?v=11"></script>
+  <script src="/room-features.js?v=11"></script>
+  <script src="/replies.js?v=11"></script>
+  <script src="/zoom-ui.js?v=11"></script>
   <script>window.TempChatNotifications.mount();</script>
-  <script src="/exit-room.js?v=10"></script>
-  <script src="/admin-client.js?v=10"></script>
-  <script src="/refresh.js?v=10"></script>
+  <script src="/exit-room.js?v=11"></script>
+  <script src="/admin-client.js?v=11"></script>
+  <script src="/refresh.js?v=11"></script>
 </body>
 </html>
 

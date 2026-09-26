@@ -65,7 +65,7 @@
         const current = context();
         if (current.joined && data.room !== current.room) {
           endOldCall();
-          await waitFor(s, 'room-ready', 'join-error', () => s.emit('join-room', { room: current.room, username: current.name, asAdmin: current.admin }), 10000, value => value?.room === current.room);
+          await waitFor(s, 'room-ready', 'join-error', () => s.emit('join-room', { room: current.room, username: current.name, asAdmin: current.admin, archiveConsent: window.TempChatArchive?.consent() }), 10000, value => value?.room === current.room);
           data = await health(s);
         }
         if (stopped()) return false;

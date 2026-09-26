@@ -1,0 +1,24 @@
+name: Delete expired TempChat archives
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  cleanup:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Purge expired records through the authenticated cleanup endpoint
+        env:
+          CLEANUP_URL: ${{ secrets.ARCHIVE_CLEANUP_URL }}
+          CLEANUP_TOKEN: ${{ secrets.ARCHIVE_CLEANUP_TOKEN }}
+        run: |
+          if [ -z "$CLEANUP_URL" ] || [ -z "$CLEANUP_TOKEN" ]; then
+            echo "Configure ARCHIVE_CLEANUP_URL and ARCHIVE_CLEANUP_TOKEN repository secrets first."
+            exit 1
+          fi
+          case "$CLEANUP_URL" in https://*) ;; *) echo "HTTPS cleanup URL required"; exit 1;; esac
+          curl --fail --silent --show-error --max-time 120 --retry 2 --retry-delay 65 \
+            -X POST -H "Authorization: Bearer $CLEANUP_TOKEN" "$CLEANUP_URL"

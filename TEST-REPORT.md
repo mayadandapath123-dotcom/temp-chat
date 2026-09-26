@@ -1,43 +1,54 @@
-# TempChat v10 — combined refresh/theme/manual changes
+# TempChat v11 — archive test report
 
-Base: GitHub main `96dd4496`.
+Base: GitHub main `22c73218`.
 
-## Automated checks
+## Automated testing
 
-**60 tests passed**: the existing 58 auth/moderation, notification lifecycle, room, reply, receipt, media, camera/zoom and URL checks, plus:
-- Session-health returns only its requesting socket's membership and does not reset/rejoin a healthy room or emit extra system messages.
-- Session-health reflects current call membership and a left room without restoring either.
+**67 tests passed with a local PostgreSQL 17 test database configured.** The normal offline/deployment test run passes 66 and skips the one explicitly opted-in PostgreSQL integration test. Existing child test servers forcibly disable archive database environment values to avoid accidentally writing fixtures to a real Neon database.
 
-The safe installer also passed a separate-HOME dry-run: correct repo/base verified, private backup created, release files applied and tests passed without committing or pushing. Syntax/shell checks and `git diff --check` passed; dependency audit reported zero known vulnerabilities.
+New checks include:
+- Compression/encryption round trip; no plaintext chat body in the ciphertext.
+- Wrong keys, modified ciphertext and authenticated-metadata substitution rejected.
+- View-once photos/call streams excluded; normal media types and size limits enforced.
+- Admin archive routes reject unauthenticated access; deletion rejects invalid CSRF/confirmation.
+- Real PostgreSQL schema initialization, encrypted binary rows, lazy metadata/media reader, persisted data readable by a restarted archive instance.
+- Wrong-key/database-isolation safeguards.
+- Manual deletion including pending buffered messages.
+- Expired records excluded from reading/media and physically deleted by cleanup.
+- A database containing unrelated public typing tables is refused without deleting those tables.
 
-## Browser smoke test
+The previous room/auth/moderation, reply/receipt, notification, refresh, camera/zoom and link tests also passed. Database tests used a localhost-only throwaway test database—not the user's Neon project.
 
-Chromium, including a 390×844 mobile/touch viewport, two room participants and an authenticated admin page. Camera and microphone hardware are simulated; room/server/Socket.IO and page navigation are real.
+The safe installer also passed a separate-HOME dry-run, including an explicit release-file copy and the ordinary 66-pass/one-optional-skip test run, without committing or pushing. JavaScript/shell syntax, `git diff --check`, and dependency audit passed; zero known dependency vulnerabilities were reported at packaging.
+
+## Browser test with real local PostgreSQL
+
+Chromium mobile-size and desktop contexts exercised the actual Node server and SQL archive. Only connection provisioning was injected to use the local disposable database; production encryption, compression, admin APIs, live chat and viewer code ran normally.
 
 Passed:
-- No theme button exists on the front toolbar. Shared themes remain accessible through Settings and apply to the other participant.
-- User manual has no admin/moderation section; it includes Refresh and the Settings-only theme location.
-- Online restoration reconnects the room without clearing visible messages.
-- A healthy check preserves the socket ID and an active call/microphone.
-- A deliberately failed health acknowledgement forces reconnection and stops the obsolete microphone/call.
-- Cancelling full reload leaves the call active.
-- Confirming reload returns to a fresh join page, clears this tab's messages, prefills room/username and does not auto-join. The other member's messages remain intact.
-- Offline checks do not navigate or wipe the page.
-- A native join-screen reload link is present.
-- Admin data refresh and full panel reload are distinct; full reload preserves a still-valid admin login.
-- Mobile page width fits the viewport; no uncaught page errors in the completed smoke run.
+- Explicit retention acknowledgement required before joining an enabled archive room.
+- Text and reply retention; normal photo and valid WAV voice-note data saved.
+- View-once photo/caption not retained.
+- Unauthenticated archive list access returns 401.
+- Admin session list and chat-like archive viewer load.
+- Media is absent from initial message responses and loads only on request into image/audio elements.
+- Reset clears live chat while retained archive count stays unchanged.
+- Manual admin deletion removes retained content.
+- Authenticated cleanup endpoint works; missing token is rejected.
+- No mobile page-width overflow or uncaught JavaScript page errors in the completed run.
 
-These checks are not a certification of every phone/browser, and cannot make an in-page button operate when JavaScript is completely frozen. Camera/OS-notification hardware behavior still requires real-device testing.
+No actual Neon account/database, Render environment or GitHub Actions secrets were provisioned by these tests. Neon TLS/pooling and the scheduled job must be validated after the owner configures them. These tests do not prove a particular compression ratio, unlimited storage, complete retention under failure, or instant erasure of provider backups.
 
-## Quick phone check after deployment
+## Owner acceptance checklist
 
-1. Close/reopen once to load v10. Confirm Refresh and Exit are visible and the front theme button is gone.
-2. Open Settings → Shared themes & wallpaper; apply a theme and confirm the room still shares it.
-3. Read the manual: admin explanation should be absent. A real verified admin visit must still announce itself and show badges.
-4. Send a message, choose Refresh → Check / reconnect, and confirm the visible chat stays.
-5. Switch to another app for a minute, then return. The app should check its connection rather than automatically erase/reload the chat.
-6. Try Reload page: cancel once, then confirm. Confirm the call/media stops, the room/name are prefilled, and you must explicitly join again.
-7. On `/admin`, try Refresh data and Reload panel. Existing ADMIN_KEY remains valid; a server redeploy may require signing in again.
-8. Test ordinary replies, notifications while joined, camera flip/zoom and Exit briefly. Keep video tests short to conserve Render bandwidth.
+1. Create the separate empty Neon project and configure the three archive environment values without changing ADMIN_KEY or the typing website.
+2. Verify `/admin` archive status is ready; inspect errors rather than assuming capture is working.
+3. Enable the GitHub cleanup job with only its URL/token secrets and run it manually. Monitor failures and Last cleanup time.
+4. Join a new test room on two devices, acknowledge retention, send text/reply/normal photo/voice note, wait a few seconds and load its archive.
+5. Send a view-once photo. It must not appear in retained history; call audio/video must not be recorded.
+6. Reset the live room. Confirm the disclosed behavior: live messages clear, archives remain.
+7. Delete that archived session as admin. Verify old stored content is gone; later new messages may be archived again.
+8. Recheck ordinary refresh/reconnect, Settings-only themes, Exit, camera flip/zoom and joined-page notifications.
+9. Monitor both Neon storage/compute/egress and Render bandwidth. The in-app 300 MiB payload cap leaves headroom but is not the provider's exact billing meter.
 
-No production deployment was performed here. The ZIP does not contain private keys.
+See NEON-ARCHIVE-SETUP.md for retention timing, backup limitations, the four-MiB per-media limit, and secret backup/rotation requirements.

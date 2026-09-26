@@ -6,3 +6,4 @@ push-keys.env
 *push-subscriptions*.json
 
 admin-key.env
+archive-secrets.env

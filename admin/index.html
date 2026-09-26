@@ -5,13 +5,16 @@
 <meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#0b0f16">
 <title>TempChat · Owner console</title>
 <link rel="stylesheet" href="/admin-assets/admin.css?v=10">
+<link rel="stylesheet" href="/admin-assets/archive-viewer.css">
+<script src="/links.js?v=11" defer></script>
+<script src="/admin-assets/archive-viewer.js" defer></script>
 <script src="/admin-assets/admin.js?v=10" defer></script>
 </head>
 <body>
 <section id="login-view" class="login-view">
   <div class="login-intro"><a class="brand" href="/"><span class="brand-mark">✦</span> TempChat <span class="brand-tag">CONTROL</span></a>
     <div class="eyebrow">OWNER WORKSPACE</div><h1>A clear view.<br>A safer room.</h1><p class="intro-copy">Live visibility and deliberate moderation for your temporary conversations.</p>
-    <div class="principles"><div><span>01</span><p><strong>Know what’s live</strong>Rooms, sessions, presence and calls.</p></div><div><span>02</span><p><strong>Moderate transparently</strong>Admin visits are always announced.</p></div><div><span>03</span><p><strong>Keep it temporary</strong>No message-history archive in this console.</p></div></div>
+    <div class="principles"><div><span>01</span><p><strong>Know what’s live</strong>Rooms, sessions, presence and calls.</p></div><div><span>02</span><p><strong>Moderate transparently</strong>Admin visits are always announced.</p></div><div><span>03</span><p><strong>Keep it temporary</strong>Encrypted seven-day archives when configured.</p></div></div>
   </div>
   <div class="login-card"><span class="eyebrow">RESTRICTED ACCESS</span><h2>Welcome back.</h2><p>Use your private owner key to open the console.</p>
     <form id="login-form"><label for="admin-key">Admin key</label><input id="admin-key" name="password" type="password" autocomplete="current-password" placeholder="Enter your private key" required maxlength="128"><button id="login-button" type="submit" class="primary">Unlock console <span>↗</span></button></form>
@@ -20,12 +23,12 @@
 </section>
 <div id="console-view" class="console hidden">
   <aside class="sidebar"><a class="brand" href="/admin"><span class="brand-mark">✦</span><span>TempChat<small>OWNER CONSOLE</small></span></a>
-    <div class="sidebar-label">WORKSPACE</div><nav><a href="#overview" class="nav-item active">▦ <span>Live overview</span></a><a href="#rooms-section" class="nav-item">▤ <span>Rooms & members</span></a><a href="#activity-section" class="nav-item">◷ <span>Moderation activity</span></a></nav>
-    <div class="sidebar-note"><span class="live-dot"></span><strong>Transparent by design</strong><p>Joining as Admin is visible to members. The console does not replay past chat or recover view-once media.</p></div>
+    <div class="sidebar-label">WORKSPACE</div><nav><a href="#overview" class="nav-item active">▦ <span>Live overview</span></a><a href="#rooms-section" class="nav-item">▤ <span>Rooms & members</span></a><a href="#archives-section" class="nav-item">▣ <span>7-day archives</span></a><a href="#activity-section" class="nav-item">◷ <span>Moderation activity</span></a></nav>
+    <div class="sidebar-note"><span class="live-dot"></span><strong>Transparent by design</strong><p>Live admin visits are announced. Retained archives are owner-only and expire after seven days; view-once photos and calls are excluded.</p></div>
     <div class="sidebar-bottom"><span class="owner-avatar">A</span><div><strong>Site owner</strong><small id="session-expiry">Protected session</small></div><button id="logout-button" class="logout-icon" title="Log out" aria-label="Log out">↪</button></div>
   </aside>
   <main id="overview"><header class="topbar"><div class="breadcrumb">Workspace <span>/</span> Live overview</div><div class="top-actions"><span id="sync-label" class="sync"><i class="live-dot"></i> Connecting</span><button id="refresh-button" class="secondary compact">↻ Refresh data</button><a href="/admin" class="secondary compact admin-reload-link">Reload panel</a><a href="/" target="_blank" rel="noopener noreferrer" class="secondary compact">Open chat ↗</a></div></header>
-    <section class="page-heading"><div><span class="eyebrow">RIGHT NOW, ON TEMPCHAT</span><h1>Your live workspace.</h1><p>Manage the room, not the conversation history.</p></div><div class="runtime"><span id="server-uptime">—</span><small>server uptime</small></div></section>
+    <section class="page-heading"><div><span class="eyebrow">RIGHT NOW, ON TEMPCHAT</span><h1>Your live workspace.</h1><p>Live moderation and time-limited, encrypted archives.</p></div><div class="runtime"><span id="server-uptime">—</span><small>server uptime</small></div></section>
     <p id="console-error" class="error" role="status"></p>
     <section class="stats"><article><span>LIVE ROOMS</span><strong id="stat-rooms">—</strong><small id="stat-locks">Waiting for data</small></article><article><span>CONNECTED MEMBERS</span><strong id="stat-members">—</strong><small id="stat-presence">Waiting for data</small></article><article><span>ROOMS IN A CALL</span><strong id="stat-calls">—</strong><small id="stat-admins">Waiting for data</small></article><article><span>RELAY PAYLOAD ESTIMATE</span><strong id="stat-bytes">—</strong><small>Since restart · not Render billing</small></article></section>
     <section id="rooms-section" class="workspace-grid"><div class="rooms-panel panel"><div class="panel-heading"><div><h2>Live rooms</h2><p>Select a room to inspect its current members.</p></div><span id="room-count" class="count-pill">0</span></div>
@@ -34,10 +37,15 @@
       <p id="truncation-note" class="fine hidden">Showing the first 500 rooms. This console is intended for a small, single-server deployment.</p>
     </div>
     <div id="room-detail" class="room-detail panel"><div class="empty"><span>▤</span><h3>Select a room</h3><p>See session activity and choose a moderation action.</p></div></div></section>
+    <section id="archives-section" class="panel archive-panel">
+      <div class="panel-heading"><div><h2>7-day chat archives</h2><p>Compressed, encrypted records. Reset clears live chat only.</p></div><button id="archive-load" class="secondary compact">Load archives</button></div>
+      <div class="archive-dashboard"><p id="archive-status" role="status">Load to check database status and list retained sessions. No message bodies are decrypted for the list.</p><div id="archive-storage"></div><button id="archive-purge" class="secondary compact">Delete expired records now</button><div id="archive-rooms"></div><button id="archive-more-rooms" class="secondary compact hidden">Load more archived sessions</button></div>
+    </section>
     <section id="activity-section" class="panel activity-panel"><div class="panel-heading"><div><h2>Recent activity</h2><p>Connection and moderation metadata only. No message contents.</p></div><span class="small-tag">MEMORY ONLY</span></div><div id="audit-list" class="audit-list"></div></section>
     <footer class="console-footer"><span id="server-memory">—</span><span>Presence is browser-reported, not proof of attention. Locks, activity and counters reset on server restart.</span></footer>
   </main>
 </div>
 <dialog id="action-dialog"><form id="action-form"><div class="dialog-top"><span class="eyebrow">MODERATION ACTION</span><button id="cancel-action-top" type="button" class="icon-button" aria-label="Cancel">✕</button></div><h2 id="action-title"></h2><p id="action-description"></p><div id="confirm-group"><label for="confirm-room">Type the exact room code to confirm</label><input id="confirm-room" autocomplete="off" spellcheck="false"></div><label for="action-reason">Reason <span class="muted">(optional, visible to affected members)</span></label><textarea id="action-reason" rows="2" maxlength="160" placeholder="Briefly explain the moderation action"></textarea><p id="action-error" class="error" role="status"></p><div class="dialog-actions"><button id="cancel-action" type="button" class="secondary">Cancel</button><button id="confirm-action" type="submit" class="danger">Confirm action</button></div></form></dialog>
 <div id="admin-toast" class="toast hidden" role="status"></div>
+<dialog id="archive-viewer" aria-labelledby="archive-title"><header><div><span class="eyebrow">ADMIN ARCHIVE · READ ONLY</span><h2 id="archive-title"></h2></div><button id="archive-close" class="icon-button" aria-label="Close archive">✕</button></header><p class="archive-view-note">This is retained history, not a live room. View-once photos and calls are not saved. Media loads only when requested.</p><button id="archive-older" class="secondary compact">Load older messages</button><p id="archive-view-status" role="status"></p><div id="archive-messages"></div></dialog>
 </body></html>

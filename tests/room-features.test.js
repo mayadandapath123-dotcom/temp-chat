@@ -21,7 +21,7 @@ async function connect(room, username) {
 const ack = (s, name, data) => new Promise((resolve, reject) => s.timeout(4000).emit(name, data, (err, reply) => err ? reject(err) : resolve(reply)));
 async function message(s, text = 'hello') { const p = event(s, 'chat-message'); s.emit('send-message', { message: text, clientId: 'test-id' }); return p; }
 before(async () => {
-  server = spawn(process.execPath, ['server.js'], { env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  server = spawn(process.execPath, ['server.js'], { env: { ...process.env, ARCHIVE_DATABASE_URL:"", ARCHIVE_ENCRYPTION_KEY:"", ARCHIVE_CLEANUP_TOKEN:"", PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
   base = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Server startup timed out')), 5000);
     server.stdout.on('data', data => { const m = String(data).match(/http:\/\/localhost:(\d+)/); if (m) { clearTimeout(timer); resolve(`http://127.0.0.1:${m[1]}`); } });
