@@ -253,7 +253,7 @@
   }
   socket.on('room-ready', () => { ready = true; flushReceipts(); });
   socket.on('connect', () => {
-    if (joinedChat && currentRoom && currentUsername) socket.emit('join-room', { room: currentRoom, username: currentUsername, asAdmin: window.TempChatAdminMode === true, archiveConsent: window.TempChatArchive?.consent() });
+    if (joinedChat && currentRoom && currentUsername) socket.emit('join-room', { room: currentRoom, username: currentUsername, asAdmin: window.TempChatAdminMode === true, archiveNoticeVersion: window.TempChatArchive?.noticeVersion() });
   });
   socket.on('disconnect', () => {
     ready = false;

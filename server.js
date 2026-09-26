@@ -42,7 +42,7 @@ app.post("/api/push/unregister", express.json({ limit: "16kb" }), (req, res) => 
 /*
   TEMP CHAT & CALL ARCHITECTURE
   -----------------------------
-  Live rooms remain temporary. With explicit retention acknowledgement,
+  Live rooms remain temporary. With a visible seven-day retention notice,
   eligible content is separately compressed/encrypted into a 7-day archive.
   View-once photos and call streams are never sent to that archive.
 */
@@ -176,7 +176,9 @@ io.on("connection", (socket) => {
     username = String(username || "").trim().slice(0, 24);
     room = String(room || "").trim().toUpperCase().slice(0, 24);
     if (!username || !room) return;
-    if (archive.policy().enabled && data.archiveConsent !== "archive-v1") return socket.emit("join-error", { error: "This site retains text, normal photos and voice notes for admin review for up to 7 days. Reload, read the retention notice and acknowledge it before joining." });
+    // Current clients automatically send the displayed notice version. Older v11
+    // clients with an explicit acknowledgement are compatible; no checkbox is required.
+    if (archive.policy().enabled && data.archiveNoticeVersion !== "archive-v1" && data.archiveConsent !== "archive-v1") return socket.emit("join-error", { error: "Text, normal photos and voice notes may be retained for admin review for up to 7 days. Reload TempChat to load the current retention notice and join." });
     if (socket.moderationRemoved) return socket.emit("join-error", { error: "This session was removed. Open a new page to rejoin if room entry is unlocked." });
     let moderator = null;
     if (data.asAdmin === true) {

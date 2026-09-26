@@ -510,7 +510,7 @@ function joinChat() {
     username: currentUsername,
     room: currentRoom,
     asAdmin: window.TempChatAdminMode === true,
-    archiveConsent: window.TempChatArchive?.consent(),
+    archiveNoticeVersion: window.TempChatArchive?.noticeVersion(),
   });
 
   if (roomName) roomName.textContent = `#${currentRoom}`;

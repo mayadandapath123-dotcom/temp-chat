@@ -2,9 +2,9 @@
 
 ## What this release stores
 
-Only acknowledged-room **text messages, reply references, normal photos and voice notes** are eligible. View-once photos and live call audio/video are excluded. Reset Chat clears the live view only and does NOT delete retained archives. The owner can delete a retained room session sooner; otherwise records expire after at most seven days from capture.
+When archiving is configured, **text messages, reply references, normal photos and voice notes** are eligible by default. View-once photos and live call audio/video are excluded. Reset Chat clears the live view only and does NOT delete retained archives. The owner can delete a retained room session sooner; otherwise records expire after at most seven days from capture.
 
-Participants see a retention notice and must acknowledge it before joining when archiving is enabled. Older clients that do not send that acknowledgement are refused entry with a reload notice. This intentionally changes the old no-retention model.
+Participants see a short, visible retention notice before joining. There is no checkbox or additional acceptance step in v12. The current client sends a notice-version compatibility marker automatically; it is not proof of consent or reading. Outdated clients without a supported notice are told to reload. The earlier v11 explicit-acknowledgement protocol remains compatible.
 
 ## 1. Create a NEW Neon project
 
@@ -61,7 +61,7 @@ For https://temp-chat-5yum.onrender.com/ → Environment, add:
 
 Keep the existing `ADMIN_KEY` unchanged. Save and redeploy. Do not alter the typing service's Environment.
 
-Open `/admin` → **7-day archives → Load archives**. Confirm it says Archive ON/ready rather than a configuration/database error. Send a test message from a newly acknowledged room, wait a few seconds, then refresh the archive list.
+Open `/admin` → **7-day archives → Load archives**. Confirm it says Archive ON/ready rather than a configuration/database error. Send a test message from a room opened in the current version, wait a few seconds, then refresh the archive list.
 
 Missing variables leave archiving off; no insecure/plaintext fallback is used. Invalid database configuration leaves an explicit warning in the owner panel. Live chat can continue if archive writes fail, so archive completeness is not guaranteed during errors, quota exhaustion or abrupt process crashes.
 

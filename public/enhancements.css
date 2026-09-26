@@ -74,8 +74,6 @@ video.tc-zoom-preview.mirrored,.self-tile.mirrored video.tc-zoom-preview { trans
 .tc-archive-notice { margin:16px 0; padding:12px 14px; border:1px solid var(--accent-border); border-radius:12px; background:var(--accent-subtle); color:var(--text-dim); text-align:left; }
 .tc-archive-notice strong { font-size:12px; color:var(--accent-light); }
 .tc-archive-notice p { font-size:11px; line-height:1.6; margin:7px 0; }
-.tc-archive-notice label { display:flex; align-items:flex-start; gap:8px; font-size:11px; line-height:1.5; }
-.tc-archive-notice input { flex-shrink:0; margin-top:3px; accent-color:var(--accent); }
 #join-screen { overflow-y:auto; }
 
 #join-screen { align-items:flex-start; }
