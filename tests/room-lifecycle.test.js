@@ -96,7 +96,7 @@ test('removal vote needs 3+ members, unanimous approval evicts and bans the devi
   const banned = io(base, { transports: ['websocket'], forceNew: true, reconnection: false }); sockets.push(banned); await event(banned, 'connect');
   const errP = event(banned, 'join-error');
   banned.emit('join-room', { room: 'EVICT', username: 'C-again', deviceId: 'device-cccccccccccccccccccc' });
-  assert.match((await errP).error, /one hour/i);
+  assert.match((await errP).error, /removed from this room/i); assert.ok(!/hour/i.test((await errP).error), 'no duration is revealed');
 
   await joinFull('EVICT', 'C2', { deviceId: 'device-ddddddddddddddddddd' });
 });

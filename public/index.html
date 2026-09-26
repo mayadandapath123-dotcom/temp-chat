@@ -139,6 +139,8 @@
           <div class="brand-mini-icon">✦</div>
           <span class="brand-title-text">TempChat</span>
         </div>
+        <!-- Room name + code: always visible in the top bar (tap to share) -->
+        <span id="room-name" class="room-pill" role="button" tabindex="0" title="Tap to share the room link"></span>
         <button id="people-button" class="people-pill-btn" type="button" title="View room members">
           <span class="people-live-dot">●</span>
           <span id="people-count">0</span>
@@ -184,11 +186,6 @@
         </button>
       </div>
     </header>
-
-    <!-- ROOM BAR: room name + code, always visible on phones and desktops -->
-    <div id="tc-room-bar" class="tc-room-bar">
-      <span id="room-name" class="room-pill" role="button" tabindex="0" title="Tap to share the room link"></span>
-    </div>
 
     <!-- PEOPLE / MEMBERS PANEL -->
     <div id="people-panel" class="people-panel glass-modal-card hidden">
@@ -487,7 +484,6 @@
           <div class="guide-badge">✦ TEMPORARY ROOMS</div>
           <h4>Ephemeral Calls, Media & Messaging</h4>
           <p>No phone numbers or signups. Live rooms are temporary; recipients can still capture or retain content.</p>
-          <a href="/manual" target="_blank" class="full-manual-link">Open Full Pamphlet Page ↗</a>
         </div>
 
         <div class="guide-sections">
@@ -544,6 +540,7 @@
   <script src="/admin-client.js?v=15"></script>
   <script src="/refresh.js?v=15"></script>
   <script src="/room-controls.js?v=15"></script>
+  <script src="/manual-tabs.js?v=15"></script>
 </body>
 </html>
 

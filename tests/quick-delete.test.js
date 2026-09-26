@@ -162,8 +162,8 @@ test('a member vote that is still waiting on someone completes when that person 
   await never(d.s, 'moderation-exit', 500);
   const exit = event(d.s, 'moderation-exit');
   c.s.emit('leave-room', {}); // Charlie leaves without voting: Alpha + Bravo are now everyone
-  assert.match((await exit).reason, /removed you for one hour/);
+  assert.match((await exit).reason, /removed you/); assert.ok(!/hour/i.test((await exit).reason), 'no duration is revealed');
   const again = await connect(); const err = event(again, 'join-error');
   again.emit('join-room', { room: 'EV1', username: 'DeltaAgain', deviceId: device(19) });
-  assert.match((await err).error, /one hour/);
+  assert.match((await err).error, /cannot rejoin/); assert.ok(!/hour/i.test((await err).error));
 });

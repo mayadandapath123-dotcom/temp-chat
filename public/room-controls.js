@@ -5,7 +5,7 @@
   const $ = id => document.getElementById(id);
   const el = (tag, text = '', cls = '') => { const n = document.createElement(tag); if (text) n.textContent = text; if (cls) n.className = cls; return n; };
 
-  // ---- Persistent device identifier (used only for the 1-hour removal ban) ----
+  // ---- Persistent device identifier (used only for the removal block) ----
   function makeDeviceId() {
     const bytes = new Uint8Array(24);
     if (crypto.getRandomValues) crypto.getRandomValues(bytes);
@@ -52,18 +52,22 @@
     roomGroup ? roomGroup.after(details) : form.append(details);
   }
 
-  // ---- Room bar: name + code always visible at the top (mobile and desktop) ----
+  // ---- Header identity: room name + code in the top bar (phones and desktops) ----
   function renderIdentity() {
     const pill = $('room-name'); if (!pill) return;
     const code = room(); if (!code) return;
     pill.replaceChildren();
-    const named = state.code === code && state.roomName && state.roomName !== code;
+    const known = state.code === code;
+    const named = known && state.roomName && state.roomName !== code;
     if (named) pill.append(el('span', state.roomName, 'tc-room-title'));
-    pill.append(el('span', `#${code}`, 'tc-room-code'));
-    if (state.code === code && state.visibility === 'private') pill.append(el('span', '🔒', 'tc-room-flag'));
-    if (state.code === code && state.quickDelete) pill.append(el('span', '⏱', 'tc-room-flag'));
-    pill.title = `Room code ${code}` + (state.code === code ? ` · ${state.visibility === 'private' ? 'Private' : 'Public'}${state.quickDelete ? ' · Quick delete on' : ''}` : '') + ' · tap to share';
-    pill.classList.toggle('tc-private-room', state.code === code && state.visibility === 'private');
+    const line = el('span', '', 'tc-room-line');
+    line.append(el('span', `#${code}`, 'tc-room-code'));
+    if (known && state.visibility === 'private') line.append(el('span', '🔒', 'tc-room-flag'));
+    if (known && state.quickDelete) line.append(el('span', '⏱', 'tc-room-flag'));
+    pill.append(line);
+    pill.classList.toggle('tc-named', Boolean(named));
+    pill.title = (named ? `${state.roomName} · ` : '') + `Room code ${code}` + (known ? ` · ${state.visibility === 'private' ? 'Private' : 'Public'}${state.quickDelete ? ' · Quick delete' : ''}` : '') + ' · tap to share';
+    pill.classList.toggle('tc-private-room', known && state.visibility === 'private');
   }
 
   // ---- Share link: private rooms include their unguessable invite token ----
@@ -82,19 +86,36 @@
   // Someone else's message: my copy starts its countdown once it has actually been
   // shown on my screen, then disappears. My own message: the server starts the
   // countdown after everyone present has seen it. Nothing is kept afterwards.
-  const qd = new Map(); // id -> { ttl, own, seen, timer, tick, ends }
+  const qd = new Map(); // id -> { ttl, own, seen, timer }
   const seenBatch = new Set(); let seenTimer = null;
-  function label(node, text) {
-    let tag = node.querySelector(':scope > .message-bubble > .tc-qd-timer, :scope > .tc-qd-timer');
-    if (!tag) { tag = el('span', '', 'tc-qd-timer'); (node.querySelector('.message-bubble') || node).append(tag); }
-    tag.textContent = text;
+  function bar(node) {
+    let b = node.querySelector(':scope > .message-bubble > .tc-qd-bar, :scope > .tc-qd-bar');
+    if (!b) { b = el('span', '', 'tc-qd-bar'); b.setAttribute('aria-hidden', 'true'); (node.querySelector('.message-bubble') || node).append(b); }
+    return b;
   }
   function nodesFor(id) { try { return [...document.querySelectorAll(`[data-message-id="${CSS.escape(id)}"]`)]; } catch (_) { return []; } }
   function register(id, ttl, own) {
     if (!id || !ttl || qd.has(id)) return;
-    const entry = { ttl, own, seen: false, timer: null, tick: null, ends: 0 };
-    qd.set(id, entry);
-    for (const n of nodesFor(id)) { n.classList.add('tc-qd'); label(n, own ? '⏱ after everyone sees it' : `⏱ ${Math.round(ttl / 1000)}s once seen`); }
+    qd.set(id, { ttl, own, seen: false, timer: null });
+    for (const n of nodesFor(id)) { n.classList.add('tc-qd'); bar(n); }
+  }
+  function run(node, ms) {
+    const b = bar(node);
+    b.style.transition = 'none'; b.style.width = '100%'; b.classList.add('tc-run');
+    // Next frame: shrink to nothing over the message's time. Silent, no numbers.
+    requestAnimationFrame(() => requestAnimationFrame(() => { b.style.transition = `width ${ms}ms linear`; b.style.width = '0%'; }));
+  }
+  function startCountdown(id, ms) {
+    const entry = qd.get(id); if (!entry || entry.timer) return;
+    for (const n of nodesFor(id)) run(n, ms);
+    entry.timer = setTimeout(() => vanish(id), ms);
+  }
+  function vanish(id) {
+    const entry = qd.get(id);
+    if (entry) { clearTimeout(entry.timer); qd.delete(id); }
+    const nodes = nodesFor(id); if (!nodes.length) return;
+    for (const n of nodes) n.classList.add('tc-qd-gone');
+    setTimeout(() => nodes.forEach(n => n.remove()), 420);
   }
   function voiceExtra(id) {
     for (const n of nodesFor(id)) {
@@ -102,24 +123,6 @@
       if (m) return (Number(m[1]) * 60 + Number(m[2])) * 1000;
     }
     return 0;
-  }
-  function startCountdown(id, ms) {
-    const entry = qd.get(id); if (!entry || entry.timer) return;
-    entry.ends = Date.now() + ms;
-    const paint = () => {
-      const left = Math.max(0, Math.ceil((entry.ends - Date.now()) / 1000));
-      for (const n of nodesFor(id)) label(n, `⏱ ${left}s`);
-    };
-    paint();
-    entry.tick = setInterval(paint, 1000);
-    entry.timer = setTimeout(() => vanish(id), ms);
-  }
-  function vanish(id) {
-    const entry = qd.get(id);
-    if (entry) { clearTimeout(entry.timer); clearInterval(entry.tick); qd.delete(id); }
-    const nodes = nodesFor(id); if (!nodes.length) return;
-    for (const n of nodes) n.classList.add('tc-qd-gone');
-    setTimeout(() => nodes.forEach(n => n.remove()), 420);
   }
   function isVisible(node) {
     if (!node.isConnected || !node.getClientRects().length) return false;
@@ -140,7 +143,7 @@
     if (document.visibilityState !== 'visible' || !document.hasFocus() || typeof joinedChat !== 'undefined' && !joinedChat) return;
     for (const [id, entry] of qd) {
       const nodes = nodesFor(id);
-      if (!nodes.length) { clearTimeout(entry.timer); clearInterval(entry.tick); qd.delete(id); continue; }
+      if (!nodes.length) { clearTimeout(entry.timer); qd.delete(id); continue; }
       if (entry.own || entry.seen) continue;
       if (!nodes.some(isVisible)) continue;
       entry.seen = true; seenBatch.add(id);
@@ -158,7 +161,7 @@
     register(data.id, Number(data.expireAfter), data.senderId === socket.id);
   }
   function clearQuickDelete() {
-    for (const e of qd.values()) { clearTimeout(e.timer); clearInterval(e.tick); }
+    for (const e of qd.values()) clearTimeout(e.timer);
     qd.clear(); seenBatch.clear();
   }
 
@@ -300,7 +303,7 @@
     renderIdentity(); patchShare();
     if (state.quickDelete && state.noticeRoom !== state.code && typeof localSystemMessage === 'function') {
       state.noticeRoom = state.code;
-      localSystemMessage('Quick delete is on in this room: each message disappears from your screen about 10 seconds after you have seen it (longer for long texts, photos and voice notes). Your own messages go once everyone present has seen them.');
+      localSystemMessage('Quick delete is on. Messages disappear shortly after they have been seen.');
     }
     if (!state.quickDelete) state.noticeRoom = '';
   });
@@ -329,8 +332,8 @@
     askVote({
       id: data.id,
       title: `Remove ${data.targetName}?`,
-      desc: `${data.requester} asked to remove ${data.targetName} from this room for one hour.${data.reason ? `\n\nReason: ${data.reason}` : ''}`,
-      meta: `Everyone (except that person) must approve. A removal blocks their device from rejoining for one hour.${progress(data.votes)}`,
+      desc: `${data.requester} asked to remove ${data.targetName} from this room.${data.reason ? `\n\nReason: ${data.reason}` : ''}`,
+      meta: `Everyone (except that person) must approve. Once approved, they are removed and cannot rejoin this room.${progress(data.votes)}`,
       onApprove: () => socket.emit('evict-vote', { id: data.id, approve: true }),
       onDeny: () => socket.emit('evict-vote', { id: data.id, approve: false }),
     });
@@ -350,10 +353,15 @@
   // Manual-only documentation (the user manual, not the join screen).
   const guide = document.querySelector('.guide-sections');
   if (guide) {
-    const section = document.createElement('div'); section.className = 'guide-section-item';
-    const title = document.createElement('h5'); title.textContent = '🛡 Rooms, privacy, quick delete and removal';
-    const body = document.createElement('p');
-    body.textContent = 'Whoever creates a room can name it and choose Public (anyone with the code joins), Private (members must approve code-based requests; invite links join directly) and Quick delete. These choices stay fixed until the room closes, even if that person leaves; nobody is marked as the creator. The room name and code stay visible at the top. With Quick delete on, each message disappears from your screen about 10 seconds after you have seen it (longer for long texts, photos and voice notes); your own messages disappear once everyone present has seen them. View-once photos and calls are never kept. Late joiners see earlier text and regular photos while the room is open. Reset clears the chat for everyone and shows who cleared it. In rooms with 3 or more people, a member can ask the room to remove someone with a reason; everyone else must approve, and a removed person cannot rejoin from that browser for one hour. Screenshots and other people’s devices are outside the website’s control.';
-    section.append(title, body); guide.prepend(section);
+    const items = [
+      ['🏷 Room name, public or private', 'Whoever creates a room can name it and choose Public (anyone with the code joins) or Private (members must approve code-based requests; invite links join directly). These choices stay until the room closes, even if that person leaves. Nobody is marked as the creator. The name and code stay in the top bar; tap them to share.'],
+      ['⏱ Quick delete', 'A creation-time choice. Each message disappears from your screen shortly after it has been shown to you (longer for long texts, photos and voice notes); a thin line under the message shows it is on its way out. Your own message goes once everyone present has seen it. View-once photos and calls are never kept.'],
+      ['🕘 Late joiners and Reset', 'While a room is open, people who join later see the earlier text and regular photos. Reset clears the chat for everyone and shows who cleared it. Everything is gone when the room closes.'],
+      ['🛡 Removing a member', 'In rooms with 3 or more people, open Members and tap Remove next to a name, then give a reason. Everyone else must approve. The removed person is blocked from rejoining that room from their browser; the block lifts quietly after an hour, and a new browser or device is not covered. Screenshots and other people’s devices are outside the website’s control.'],
+    ];
+    for (const [heading, text] of items.reverse()) {
+      const section = document.createElement('div'); section.className = 'guide-section-item';
+      section.append(el('h5', heading), el('p', text)); guide.prepend(section);
+    }
   }
 })();

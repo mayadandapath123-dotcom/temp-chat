@@ -199,8 +199,8 @@ function admit(socket, { username, room, moderator = null, deviceId = null }) {
 function completeEviction(room, result) {
   const target = io.sockets.sockets.get(result.targetId);
   const reason = result.reason ? ` Reason: ${result.reason}` : "";
-  if (target && target.room === room) forceLeave(target, `The room members removed you for one hour.${reason}`);
-  io.to(room).emit("system-message", { text: `${result.targetName} was removed from the room by member vote and blocked for one hour.` });
+  if (target && target.room === room) forceLeave(target, `The members of this room removed you.${reason}`);
+  io.to(room).emit("system-message", { text: `${result.targetName} was removed from the room by member vote.` });
   emitRoomInfo(room);
 }
 // Votes can also complete when a voter leaves (they no longer need to approve).
@@ -246,7 +246,7 @@ io.on("connection", (socket) => {
 
     // One-hour device ban after removal (member-driven eviction).
     if (!moderator && deviceId && lifecycle.banState(room, deviceId)) {
-      return socket.emit("join-error", { error: "You were removed from this room and cannot rejoin from this device for one hour." });
+      return socket.emit("join-error", { error: "You were removed from this room by its members and cannot rejoin." });
     }
 
     if (!moderator && info.visibility === "private" && data.inviteToken !== info.inviteToken) {
