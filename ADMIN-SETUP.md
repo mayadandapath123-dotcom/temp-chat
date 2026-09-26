@@ -70,7 +70,7 @@ Select a room → **Enter as Admin** → explicitly join in the new chat tab.
 - Ordinary clients cannot grant themselves this role with a username or URL flag. They need a valid authenticated admin session.
 - Exact reserved names such as “Admin” entered by guests are labeled “Admin (guest)”. The badge—not just the text name—identifies the verified role.
 - The join URL uses `admin=1` only as a mode request; it contains no secret. Sharing it does not give another person admin authority.
-- You receive new messages after entering like another participant. Live room entry does not replay earlier messages or bypass view-once media. The separate, owner-only seven-day archive viewer can show eligible retained content when Neon archiving is enabled; see NEON-ARCHIVE-SETUP.md.
+- You receive new messages after entering like another participant. Live room entry does not replay earlier messages or bypass view-once media. There is no saved-chat viewer in this release. The live console shows rooms/members only. Late-join history is temporary and cleared on reset/close.
 - Calls still require the normal visible call join flow and any browser microphone/camera permission. There is no silent call-listening feature.
 
 The join-screen disclosure, room entry announcements and verified badges retain moderation transparency. The public manual’s admin walkthrough has been removed in v10.
@@ -108,7 +108,7 @@ Before rotating, securely preserve/remove the old `admin-key.env` as appropriate
 
 ## Data retention and limitations
 
-- Admin sessions, locks, activity and counters are **memory-only** and reset on server restart. The moderation activity buffer remains temporary. Optional chat archives use the separate encrypted Neon store and its seven-day retention policy.
+- Admin sessions, locks, activity and counters are **memory-only** and reset on server restart. The moderation activity buffer remains temporary. New chat is temporary. A cleanup-only job expires old rows from the retired archive; see UPDATE-GUIDE.md.
 - The activity buffer holds up to 200 recent metadata entries; the API returns up to 100 and the UI displays the latest 40.
 - Unlocked empty rooms are removed from live metrics. Locked empty rooms remain until unlocked/expired. The dashboard shows up to 500 rooms and flags truncation.
 - The login rate limiter keeps bounded salted hashes of connection source addresses for counters, not a user-location/IP directory. Reverse proxies can cause multiple attempts to share the same rate bucket.

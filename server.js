@@ -42,19 +42,20 @@ app.post("/api/push/unregister", express.json({ limit: "16kb" }), (req, res) => 
 /*
   TEMP CHAT & CALL ARCHITECTURE
   -----------------------------
-  Live rooms remain temporary. With a visible seven-day retention notice,
-  eligible content is separately compressed/encrypted into a 7-day archive.
-  View-once photos and call streams are never sent to that archive.
+  Live rooms are temporary. New content is held only in memory until the room
+  is reset or closed. A cleanup-only service removes already-expired rows left
+  by the retired seven-day archive.
 */
 
 const features = require("./lib/room-features")(io);
+const lifecycle = require("./lib/room-lifecycle")(io);
 const { randomUUID } = require("node:crypto");
 const PRESENCE_TIMEOUT = 12000;
 const calls = new Map(); // room -> Map(socketId -> { username, callType, videoEnabled, audioEnabled })
-const archive = require("./lib/chat-archive")();
-archive.start();
+const archiveCleanup = require("./lib/retired-archive-cleanup")();
+archiveCleanup.start();
 const admin = require("./lib/admin-control")({
-  app, io, calls, archive,
+  app, io, calls,
   controls: {
     eject(socket, reason) { forceLeave(socket, reason); },
     clear(room) { clearRoom(room); },
@@ -62,7 +63,6 @@ const admin = require("./lib/admin-control")({
   },
 });
 
-app.get("/api/archive/policy", (_req, res) => res.set("Cache-Control", "no-store").json(archive.policy()));
 let lastArchiveCleanupRequest = 0;
 app.post("/api/archive/cleanup", async (req, res) => {
   const crypto = require("node:crypto"), secret = process.env.ARCHIVE_CLEANUP_TOKEN || "";
@@ -71,13 +71,18 @@ app.post("/api/archive/cleanup", async (req, res) => {
   if (supplied.length > 200 || !crypto.timingSafeEqual(crypto.createHash('sha256').update(secret).digest(), crypto.createHash('sha256').update(supplied).digest())) return res.status(401).json({ error: "Unauthorized." });
   if (Date.now() - lastArchiveCleanupRequest < 60000) return res.status(429).json({ error: "Wait a minute between cleanup requests." });
   lastArchiveCleanupRequest = Date.now();
-  try { res.set("Cache-Control", "no-store").json({ ok: true, ...await archive.cleanup("external") }); }
+  try { res.set("Cache-Control", "no-store").json({ ok: true, ...await archiveCleanup.cleanup() }); }
   catch (_) { res.status(503).json({ error: "Archive cleanup failed. Check database availability." }); }
 });
 
 function clearRoom(room) {
-  features.reset(room); pushService.reset(room);
+  features.reset(room); pushService.reset(room); lifecycle.clearHistory(room);
   io.to(room).emit("push-reset"); io.to(room).emit("clear-chat");
+}
+function emitRoomInfo(room) {
+  const info = lifecycle.roomInfo(room);
+  if (!info) return;
+  io.to(room).emit("room-info", { code: info.code, name: info.name, visibility: info.visibility, memberCount: info.memberCount, inviteToken: info.inviteToken });
 }
 function endRoomCall(room) {
   calls.delete(room); io.to(room).emit("call-ended"); broadcastCallStatus(room);
@@ -160,7 +165,6 @@ io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id);
   features.attach(socket);
   pushService.attach(socket);
-  socket.emit("archive-policy", archive.policy());
 
   // A read-only liveness check: never joins, resets or exposes another room.
   socket.on("session-health", (_data, ack) => {
@@ -171,14 +175,45 @@ io.on("connection", (socket) => {
   });
 
   // Join Room
+  function admit(socket, { username, room, moderator = null, deviceId = null }) {
+    if (socket.room) {
+      const oldRoom = socket.room;
+      removeFromCall(socket);
+      pushService.leave(socket);
+      socket.leave(oldRoom);
+      admin.left(socket, oldRoom);
+      features.left(oldRoom);
+      lifecycle.left(oldRoom, socket.id);
+      socket.to(oldRoom).emit("system-message", { text: `${socket.username} left the room.` });
+      broadcastPresence(oldRoom);
+      broadcastCallStatus(oldRoom);
+      emitRoomInfo(oldRoom);
+    }
+    socket.join(room);
+    socket.username = username;
+    socket.room = room;
+    socket.deviceId = deviceId;
+    socket.presenceStatus = "active";
+    socket.isAdmin = Boolean(moderator); socket.adminSessionId = moderator?.id || null;
+    admin.joined(socket);
+    socket.emit("room-history", { room, entries: lifecycle.history(room) });
+    features.joined(socket);
+
+    if (socket.isAdmin) io.to(room).emit("system-message", { text: "Admin joined this room visibly for moderation." });
+    else socket.to(room).emit("system-message", { text: `${username} entered the room.` });
+
+    broadcastPresence(room);
+    broadcastCallStatus(room);
+    emitRoomInfo(room);
+    startPresenceTimeout(socket);
+  }
+
   socket.on("join-room", (data = {}) => {
     let { username, room } = data || {};
     username = String(username || "").trim().slice(0, 24);
     room = String(room || "").trim().toUpperCase().slice(0, 24);
     if (!username || !room) return;
-    // Current clients automatically send the displayed notice version. Older v11
-    // clients with an explicit acknowledgement are compatible; no checkbox is required.
-    if (archive.policy().enabled && data.archiveNoticeVersion !== "archive-v1" && data.archiveConsent !== "archive-v1") return socket.emit("join-error", { error: "Text, normal photos and voice notes may be retained for admin review for up to 7 days. Reload TempChat to load the current retention notice and join." });
+    const deviceId = typeof data.deviceId === "string" && /^[A-Za-z0-9_-]{16,100}$/.test(data.deviceId) ? data.deviceId : null;
     if (socket.moderationRemoved) return socket.emit("join-error", { error: "This session was removed. Open a new page to rejoin if room entry is unlocked." });
     let moderator = null;
     if (data.asAdmin === true) {
@@ -189,34 +224,61 @@ io.on("connection", (socket) => {
     if (!moderator && /^(admin|administrator|moderator)$/i.test(username)) username += " (guest)";
     if (!moderator && !admin.canJoin(room)) return socket.emit("join-error", { error: "Admin has temporarily locked entry to this room. Try later." });
 
-    if (socket.room) {
-      const oldRoom = socket.room;
-      removeFromCall(socket);
-      pushService.leave(socket);
-      socket.leave(oldRoom);
-      admin.left(socket, oldRoom);
-      features.left(oldRoom);
-      socket.to(oldRoom).emit("system-message", {
-        text: `${socket.username} left the room.`,
-      });
-      broadcastPresence(oldRoom);
-      broadcastCallStatus(oldRoom);
+    const isNew = !lifecycle.exists(room);
+    if (isNew) lifecycle.ensure(room, { name: data.name, visibility: data.visibility });
+    const info = lifecycle.roomInfo(room);
+
+    // One-hour device ban after removal (member-driven eviction).
+    if (!moderator && deviceId && lifecycle.banState(room, deviceId)) {
+      return socket.emit("join-error", { error: "You were removed from this room and cannot rejoin from this device for one hour." });
     }
 
-    socket.join(room);
-    socket.username = username;
-    socket.room = room;
-    socket.presenceStatus = "active";
-    socket.isAdmin = Boolean(moderator); socket.adminSessionId = moderator?.id || null;
-    admin.joined(socket);
-    features.joined(socket);
+    if (!moderator && info.visibility === "private" && data.inviteToken !== info.inviteToken) {
+      const result = lifecycle.requestJoin(room, { socketId: socket.id, username, deviceId });
+      if (result.error) return socket.emit("join-error", { error: result.error });
+      if (result.pending) {
+        socket.pendingUsername = username; socket.pendingDeviceId = deviceId; socket.pendingRoom = room;
+        return socket.emit("join-pending", { id: result.id, room, memberCount: result.memberCount });
+      }
+      // result.admit: room was empty and closed, so it can be recreated/joined now
+      return admit(socket, { username, room, moderator, deviceId });
+    }
 
-    if (socket.isAdmin) io.to(room).emit("system-message", { text: "Admin joined this room visibly for moderation." });
-    else socket.to(room).emit("system-message", { text: `${username} entered the room.` });
+    admit(socket, { username, room, moderator, deviceId });
+  });
 
-    broadcastPresence(room);
-    broadcastCallStatus(room);
-    startPresenceTimeout(socket);
+  // Private room join approval
+  socket.on("join-vote", (data = {}) => {
+    if (!socket.room) return;
+    const result = lifecycle.voteJoin(socket.room, socket.id, data);
+    if (result.admit) {
+      const requester = io.sockets.sockets.get(result.requesterId);
+      if (requester && !requester.room) admit(requester, { username: requester.pendingUsername || "Guest", room: socket.room, deviceId: requester.pendingDeviceId || result.deviceId });
+    } else if (result.error) socket.emit("system-message", { text: result.error });
+  });
+
+  // Member-driven removal (3+ members)
+  socket.on("evict-request", (data = {}, ack) => {
+    if (!socket.room || !socket.username) return typeof ack === "function" && ack({ error: "Join a room first." });
+    const result = lifecycle.requestEvict(socket.room, socket.id, data);
+    if (typeof ack === "function") ack(result.error ? { error: result.error } : { ok: true });
+  });
+
+  socket.on("evict-vote", (data = {}, ack) => {
+    if (!socket.room) return typeof ack === "function" && ack({ error: "Join a room first." });
+    const result = lifecycle.voteEvict(socket.room, socket.id, data);
+    if (result.evict) {
+      const target = io.sockets.sockets.get(result.targetId);
+      const reason = result.reason ? ` Reason: ${result.reason}` : "";
+      if (target && target.room === socket.room) {
+        forceLeave(target, `The room members removed you for one hour.${reason}`);
+      }
+      io.to(socket.room).emit("system-message", { text: `${result.targetName} was removed from the room by member vote and blocked for one hour.` });
+      emitRoomInfo(socket.room);
+    } else if (result.error && result.error !== "You cannot vote on your own removal.") {
+      socket.emit("system-message", { text: result.error });
+    }
+    if (typeof ack === "function") ack(result.error ? { error: result.error } : { ok: true });
   });
 
   // Explicit Exit affects this connection only; it never emits clear-chat.
@@ -228,9 +290,10 @@ io.on("connection", (socket) => {
     if (data?.token) pushService.unregister(data.token);
     if (room) {
       socket.leave(room); admin.left(socket, room);
-      socket.room = null; socket.username = null; socket.isAdmin = false; socket.adminSessionId = null;
-      features.left(room);
+      socket.room = null; socket.username = null; socket.isAdmin = false; socket.adminSessionId = null; socket.deviceId = null;
+      features.left(room); lifecycle.left(room, socket.id);
       io.to(room).emit("user-stop-typing", { username });
+      emitRoomInfo(room);
       io.to(room).emit("system-message", { text: `${username} left the room.` });
       broadcastPresence(room); broadcastCallStatus(room);
     }
@@ -265,7 +328,7 @@ io.on("connection", (socket) => {
       id, clientId, room: socket.room, ...features.record(socket, id, { kind: "text", text: message }), reply: quote.value, username: socket.username, isAdmin: Boolean(socket.isAdmin), message,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
-    archive.capture(socket, admin.roomInstance(socket.room), "text", { id, message, reply: quote.value });
+    lifecycle.record(socket.room, { id, type: "text", username: socket.username, senderId: socket.id, isAdmin: Boolean(socket.isAdmin), text: message, reply: quote.value });
     admin.activity(socket, "text", Buffer.byteLength(message), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
     pushService.notify(socket, { id, title: socket.username, body: message });
     if (typeof ack === "function") ack({ ok: true, id });
@@ -283,7 +346,6 @@ io.on("connection", (socket) => {
       mime: data.mime || "audio/webm",
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
-    archive.capture(socket, admin.roomInstance(socket.room), "voice", { ...data, id });
     admin.activity(socket, "voice", admin.size(data.audio), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
     pushService.notify(socket, { id, title: socket.username, body: "Sent a voice note" });
   });
@@ -301,7 +363,7 @@ io.on("connection", (socket) => {
       isViewOnce: data.isViewOnce !== false,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
-    archive.capture(socket, admin.roomInstance(socket.room), "photo", { ...data, id });
+    if (data.isViewOnce === false) lifecycle.record(socket.room, { id, type: "photo", username: socket.username, senderId: socket.id, isAdmin: Boolean(socket.isAdmin), image: data.image, caption: String(data.caption || "").slice(0, 200) });
     admin.activity(socket, "photo", admin.size(data.image), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
     pushService.notify(socket, { id, title: socket.username, body: data.isViewOnce !== false ? "Sent a view-once photo" : "Sent a photo" });
   });
@@ -489,9 +551,11 @@ io.on("connection", (socket) => {
       const room = socket.room;
       admin.left(socket, room);
       features.left(room);
+      lifecycle.left(room, socket.id);
       socket.to(room).emit("system-message", {
         text: `${socket.username} disconnected.`,
       });
+      emitRoomInfo(room);
       setTimeout(() => {
         broadcastPresence(room);
         broadcastCallStatus(room);
@@ -524,6 +588,7 @@ for (const signal of ['SIGTERM','SIGINT']) process.on(signal, async () => {
   if (shuttingDown) return; shuttingDown = true;
   const deadline = setTimeout(() => process.exit(0), 9000); deadline.unref();
   io.close(); server.close();
-  try { await archive.close(); } catch (_) {}
+  lifecycle.close();
+  try { await archiveCleanup.close(); } catch (_) {}
   process.exit(0);
 });

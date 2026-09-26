@@ -114,9 +114,6 @@ test('missing owner key disables admin login without affecting public chat',asyn
  const control=createAdmin({app,io:{sockets:{sockets:new Map()},to:()=>({emit(){}})},calls:new Map(),controls:{},env:{}});s.listen(0,'127.0.0.1');await once(s,'listening');const origin='http://127.0.0.1:'+s.address().port;
  try{const r=await fetch(origin+'/api/admin/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({key:'anything'})});assert.equal(r.status,503);const status=await(await fetch(origin+'/api/admin/session')).json();assert.equal(status.configured,false);}finally{control.close();await new Promise(r=>s.close(r));}
 });
-test('archive endpoints enforce admin auth and deletion enforces CSRF/confirmation',async()=>{
- for(const route of ['archive/status','archive/rooms','archive/messages?instance=bad','archive/media?chunk=bad&event=bad']) assert.equal((await req(route,undefined,{auth:false})).status,401);
- assert.equal((await req('archive/delete',{instance:'bad',confirmation:'DELETE'},{auth:false})).status,401);
- assert.equal((await req('archive/delete',{instance:'bad',confirmation:'DELETE'},{headers:{'x-csrf-token':'wrong'}})).status,403);
- assert.equal((await req('archive/delete',{instance:'bad',confirmation:'wrong'})).status,400);
+test('retired archive history routes are gone from the admin API',async()=>{
+ for(const route of ['archive/status','archive/rooms','archive/messages?instance=bad','archive/media?chunk=bad&event=bad','archive/delete']) assert.equal((await req(route,undefined,{auth:false})).status,404);
 });

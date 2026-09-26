@@ -1,32 +1,34 @@
-# TempChat v12 — joining without a checkbox
+# Rooms / private approval / member removal / temporary history — test report
 
-Base: GitHub main `0fdfd72d`.
+Base: GitHub main `1b10f5551`.
 
-## Tests
+## Automated tests: 73 passed
+New coverage (tests/room-lifecycle.test.js, tests/temporary-mode.test.js, updated admin tests):
+- Named public room creation; late joiner receives prior text history and room identity.
+- Private room: code-based join requires unanimous approval; denial cancels; unanimous approval admits; invite token bypasses approval.
+- Removal vote requires 3+ members; two-member room is refused; unanimous approval evicts the target and bans its device; a different device can still join.
+- Reset clears history; the room closes and becomes a fresh public room after the last member leaves.
+- Join page has no archive notice/checkbox/disclosure; retired archive admin assets/routes are gone; admin console assets still serve.
+- Existing room/receipt/reply/media/camera/notification/admin tests still pass.
 
-- **69 automated tests passed.** The optional localhost PostgreSQL integration test was skipped in this patch run; no Neon credentials were used.
-- Added checks for a visible retention notice with no checkbox, direct join using the new automatic notice marker, safe reload errors for outdated clients and backward compatibility with acknowledged v11 clients.
-- Existing archive codec/auth, admin controls, notifications, refresh, room/receipt/reply, media and link tests passed.
-- `lib/chat-archive.js`, `lib/archive-codec.js` and `lib/archive-routes.js` are byte-for-byte unchanged from the working archive release. This patch does not migrate or rewrite stored data.
+The `pg` dependency remains only for the retired-archive expiry cleanup module. Normal tests run with archive database values empty.
 
-The installer passed a separate-HOME dry-run without committing or pushing. Syntax/shell checks, `git diff --check` and dependency audit passed (zero known dependency vulnerabilities reported).
-
-## Browser flow
-
-Chromium in a mobile-size/touch viewport, with archive policy enabled but a deliberately unreachable localhost test database. No real database/account is contacted, and no messages are sent for retention in this test.
-
-Passed:
-- No checkbox inputs or acknowledgement label in the joining screen.
-- Seven-day retention/Reset notice remains visible.
-- One-step join succeeds without checking anything.
-- Reconnection automatically sends the notice marker and returns to the room.
-- Settings-only theme placement remains.
-- No horizontal page overflow or uncaught browser JavaScript errors.
+## Browser smoke test
+Chromium (mobile + desktop viewports):
+- Named room + always-visible room code in the header.
+- Late joiner sees earlier messages (history replay).
+- Three members → Remove buttons appear in the members list.
+- Private room: invite link joins directly; code-based stranger shows a waiting banner and members get an approval prompt; approving from all members admits them.
+- Manual contains the new feature explanation; the join screen does not advertise it.
+- No uncaught page JavaScript errors.
 
 ## After deployment
+1. Close/reopen tabs to load the new scripts.
+2. Create a named public room and confirm the name + code show on mobile.
+3. Join a second device and confirm it sees earlier messages.
+4. Create a private room; share its invite link; confirm a code-based joiner needs approval.
+5. With 3+ members, request a removal with a reason, approve from everyone, and confirm the person is removed and blocked on their device.
+6. Reset and confirm history clears; have everyone leave and confirm the room is fresh.
+7. Keep the old archive cleanup job until it reports remaining: 0, then remove old archive settings.
 
-1. Reopen TempChat to load v12.
-2. Confirm the checkbox is absent, but the short retention notice remains.
-3. Join a room normally and send a test message.
-4. Verify the admin archive still receives it and the expiry workflow remains healthy.
-5. Do not change the database URL or encryption/admin keys for this update.
+No production deploy or real Neon deletion was performed here.
