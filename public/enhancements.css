@@ -90,3 +90,16 @@ video.tc-zoom-preview.mirrored,.self-tile.mirrored video.tc-zoom-preview { trans
 .tc-vote-dialog { width:min(460px, calc(100vw - 24px)); }
 #tc-vote-desc { white-space:pre-wrap; }
 @media(max-width:520px) { .room-pill { max-width:62vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } }
+
+/* Room bar: name + code always visible under the header (phones and desktops) */
+.tc-room-bar { flex:0 0 auto; display:flex; align-items:center; justify-content:center; padding:5px 10px 6px; border-bottom:1px solid var(--glass-border); background:rgba(255,255,255,0.03); }
+.tc-room-bar .room-pill { max-width:100%; display:inline-flex; align-items:center; gap:9px; padding:6px 14px; font-size:13px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3; }
+.tc-room-bar .room-pill:hover, .tc-room-bar .room-pill:focus-visible { border-color:var(--accent); outline:none; }
+.tc-room-bar .tc-room-title { font-weight:800; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.tc-room-bar .tc-room-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:14px; letter-spacing:1.5px; font-weight:800; color:var(--accent-light); flex:0 0 auto; }
+.tc-room-bar .tc-room-flag { font-size:12px; flex:0 0 auto; }
+[data-room-theme="daylight"] .tc-room-bar { background:rgba(0,0,0,0.03); }
+/* Quick delete countdown and fade-out */
+.tc-qd-timer { display:inline-flex; align-items:center; gap:4px; margin-left:8px; padding:2px 7px; border-radius:99px; border:1px solid var(--accent-border); background:var(--accent-subtle); color:var(--accent-light); font-size:10px; font-weight:700; white-space:nowrap; vertical-align:middle; }
+.call-chat-msg .tc-qd-timer { margin-left:6px; }
+.tc-qd-gone { transition:opacity .4s ease, transform .4s ease; opacity:0; transform:translateY(-6px) scale(.98); pointer-events:none; }

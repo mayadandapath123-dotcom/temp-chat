@@ -175,9 +175,6 @@
           </svg>
         </button>
 
-        <!-- Room Code Pill -->
-        <span id="room-name" class="room-pill" title="Click to share room link"></span>
-
         <!-- Distinct Luxury Red Glass Reset Button -->
         <button id="reset-button" class="reset-danger-btn" type="button" title="Clear room chat for everyone">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
@@ -187,6 +184,11 @@
         </button>
       </div>
     </header>
+
+    <!-- ROOM BAR: room name + code, always visible on phones and desktops -->
+    <div id="tc-room-bar" class="tc-room-bar">
+      <span id="room-name" class="room-pill" role="button" tabindex="0" title="Tap to share the room link"></span>
+    </div>
 
     <!-- PEOPLE / MEMBERS PANEL -->
     <div id="people-panel" class="people-panel glass-modal-card hidden">

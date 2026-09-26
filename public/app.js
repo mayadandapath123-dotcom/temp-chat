@@ -513,6 +513,7 @@ function joinChat() {
     deviceId: window.TempChatDeviceId,
     name: create.name,
     visibility: create.visibility,
+    quickDelete: create.quickDelete === true,
     inviteToken: window.TempChatRoom?.inviteToken?.() || "",
   });
 
@@ -1998,13 +1999,13 @@ function localSystemMessage(text) {
   scrollMessagesToBottom();
 }
 
-socket.on("clear-chat", () => {
+socket.on("clear-chat", (data) => {
   closeAndViewOnceDestroy();
   ephemeralPhotoStore.clear();
   if (messages) messages.innerHTML = "";
   if (callChatMessages) callChatMessages.innerHTML = "";
   playSfx("reset");
-  showToast("Chat cleared for room.", "danger");
+  showToast(data?.by ? `${data.by} cleared the chat for everyone.` : "Chat cleared for room.", "danger");
 });
 
 if (resetButton) {

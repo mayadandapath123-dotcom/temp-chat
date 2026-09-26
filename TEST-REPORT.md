@@ -1,34 +1,23 @@
-# Rooms / private approval / member removal / temporary history — test report
+# Test report — quick delete, private-room fix, named clears, room bar
 
-Base: GitHub main `1b10f5551`.
+## Automated tests: 79 passed
+`npm test` (Node built-in runner) — all previous suites plus `tests/quick-delete.test.js`:
+- Same-device second tab in a private room still needs approval from everyone present; a member reconnecting with its own room key is admitted silently; the requester sees "x of y approved"; no creator/owner/host field exists in room info.
+- A pending join completes when the only member who had not voted leaves; the room stays private after earlier members leave.
+- Quick delete is a creation-time flag: later joiners cannot switch it off; it survives the creator leaving; public rooms send `expireAfter: null`.
+- Sender copy/history entry expire only after every present member (including a late joiner who got it from history) has reported it seen; time scales with length (base for short text, 9× base for the longest); a recipient leaving stops blocking the countdown; expired entries disappear from late-join history.
+- Regular photos and voice notes are covered, view-once photos are not; Reset names the person and cancels pending expiries.
+- A removal vote completes when the last non-voter leaves; the removed device is blocked for one hour.
 
-## Automated tests: 73 passed
-New coverage (tests/room-lifecycle.test.js, tests/temporary-mode.test.js, updated admin tests):
-- Named public room creation; late joiner receives prior text history and room identity.
-- Private room: code-based join requires unanimous approval; denial cancels; unanimous approval admits; invite token bypasses approval.
-- Removal vote requires 3+ members; two-member room is refused; unanimous approval evicts the target and bans its device; a different device can still join.
-- Reset clears history; the room closes and becomes a fresh public room after the last member leaves.
-- Join page has no archive notice/checkbox/disclosure; retired archive admin assets/routes are gone; admin console assets still serve.
-- Existing room/receipt/reply/media/camera/notification/admin tests still pass.
+## Browser check (Playwright, headless Chromium): passed
+Phone (390×780) creates a named quick-delete room, two desktops join:
+- Room bar visible on phone and desktop with name, code and ⏱; no creator label anywhere.
+- Focused reader's copy counts down (⏱ 3s…) and vanishes; a hidden tab keeps it; the sender's copy waits ("⏱ after everyone sees it") and vanishes only after the hidden tab comes back and sees it.
+- Reset shows "Bravo cleared the chat for everyone." on every screen.
+- Private room: a second tab on an approved device waits for approval; the approver is not re-prompted; requester sees "1 of 2 approved"; 🔒 shown in the bar.
+- Manual documents everything; the join screen only has the option itself; zero page errors.
 
-The `pg` dependency remains only for the retired-archive expiry cleanup module. Normal tests run with archive database values empty.
+Screenshots: `qd-mobile-room-bar.png`, `qd-desktop-room-bar.png`, `qd-countdown-desktop.png`, `qd-mobile-cleared.png`, `qd-private-approval.png`.
 
-## Browser smoke test
-Chromium (mobile + desktop viewports):
-- Named room + always-visible room code in the header.
-- Late joiner sees earlier messages (history replay).
-- Three members → Remove buttons appear in the members list.
-- Private room: invite link joins directly; code-based stranger shows a waiting banner and members get an approval prompt; approving from all members admits them.
-- Manual contains the new feature explanation; the join screen does not advertise it.
-- No uncaught page JavaScript errors.
-
-## After deployment
-1. Close/reopen tabs to load the new scripts.
-2. Create a named public room and confirm the name + code show on mobile.
-3. Join a second device and confirm it sees earlier messages.
-4. Create a private room; share its invite link; confirm a code-based joiner needs approval.
-5. With 3+ members, request a removal with a reason, approve from everyone, and confirm the person is removed and blocked on their device.
-6. Reset and confirm history clears; have everyone leave and confirm the room is fresh.
-7. Keep the old archive cleanup job until it reports remaining: 0, then remove old archive settings.
-
-No production deploy or real Neon deletion was performed here.
+## Not covered automatically
+Real phones (notification permission, screen lock), long calls, and Render cold starts. Test on your devices after deploy.

@@ -48,7 +48,7 @@ app.post("/api/push/unregister", express.json({ limit: "16kb" }), (req, res) => 
 */
 
 const features = require("./lib/room-features")(io);
-const lifecycle = require("./lib/room-lifecycle")(io);
+const lifecycle = require("./lib/room-lifecycle")(io, { quickDeleteMinMs: Number(process.env.TEMPCHAT_QD_BASE_MS) || 10000 }); // env override exists only for automated tests
 const { randomUUID } = require("node:crypto");
 const PRESENCE_TIMEOUT = 12000;
 const calls = new Map(); // room -> Map(socketId -> { username, callType, videoEnabled, audioEnabled })
@@ -75,14 +75,17 @@ app.post("/api/archive/cleanup", async (req, res) => {
   catch (_) { res.status(503).json({ error: "Archive cleanup failed. Check database availability." }); }
 });
 
-function clearRoom(room) {
+function clearRoom(room, by = null) {
   features.reset(room); pushService.reset(room); lifecycle.clearHistory(room);
-  io.to(room).emit("push-reset"); io.to(room).emit("clear-chat");
+  const who = String(by || "Admin").slice(0, 32);
+  io.to(room).emit("push-reset"); io.to(room).emit("clear-chat", { by: who });
+  // Admin clears announce themselves from the admin console; member resets are named here.
+  if (by) io.to(room).emit("system-message", { text: `${who} cleared the chat for everyone.` });
 }
 function emitRoomInfo(room) {
   const info = lifecycle.roomInfo(room);
   if (!info) return;
-  io.to(room).emit("room-info", { code: info.code, name: info.name, visibility: info.visibility, memberCount: info.memberCount, inviteToken: info.inviteToken });
+  io.to(room).emit("room-info", { code: info.code, name: info.name, visibility: info.visibility, quickDelete: info.quickDelete, memberCount: info.memberCount, inviteToken: info.inviteToken });
 }
 function endRoomCall(room) {
   calls.delete(room); io.to(room).emit("call-ended"); broadcastCallStatus(room);
@@ -92,10 +95,10 @@ function forceLeave(socket, reason) {
   socket.emit("moderation-exit", { reason: String(reason || "This session has ended.").slice(0, 180) });
   clearTimeout(socket.presenceTimeout); removeFromCall(socket); pushService.leave(socket);
   if (room) {
-    socket.leave(room); admin.left(socket, room); features.left(room);
+    socket.leave(room); admin.left(socket, room); features.left(room); lifecycle.left(room, socket.id);
     socket.room = null; socket.username = null; socket.isAdmin = false;
     if (wasAdmin) io.to(room).emit("system-message", { text: "Admin left this room." });
-    broadcastPresence(room); broadcastCallStatus(room);
+    broadcastPresence(room); broadcastCallStatus(room); emitRoomInfo(room);
   }
   socket.moderationRemoved = true;
   const timer = setTimeout(() => socket.disconnect(true), 200); timer.unref?.();
@@ -161,6 +164,52 @@ function removeFromCall(socket) {
   broadcastCallStatus(socket.room);
 }
 
+function admit(socket, { username, room, moderator = null, deviceId = null }) {
+  if (socket.room) {
+    const oldRoom = socket.room;
+    removeFromCall(socket);
+    pushService.leave(socket);
+    socket.leave(oldRoom);
+    admin.left(socket, oldRoom);
+    features.left(oldRoom);
+    lifecycle.left(oldRoom, socket.id);
+    socket.to(oldRoom).emit("system-message", { text: `${socket.username} left the room.` });
+    broadcastPresence(oldRoom);
+    broadcastCallStatus(oldRoom);
+    emitRoomInfo(oldRoom);
+  }
+  socket.join(room);
+  socket.username = username;
+  socket.room = room;
+  socket.deviceId = deviceId;
+  socket.presenceStatus = "active";
+  socket.isAdmin = Boolean(moderator); socket.adminSessionId = moderator?.id || null;
+  admin.joined(socket);
+  socket.emit("room-history", { room, entries: lifecycle.history(room) });
+  features.joined(socket);
+
+  if (socket.isAdmin) io.to(room).emit("system-message", { text: "Admin joined this room visibly for moderation." });
+  else socket.to(room).emit("system-message", { text: `${username} entered the room.` });
+
+  broadcastPresence(room);
+  broadcastCallStatus(room);
+  emitRoomInfo(room);
+  startPresenceTimeout(socket);
+}
+function completeEviction(room, result) {
+  const target = io.sockets.sockets.get(result.targetId);
+  const reason = result.reason ? ` Reason: ${result.reason}` : "";
+  if (target && target.room === room) forceLeave(target, `The room members removed you for one hour.${reason}`);
+  io.to(room).emit("system-message", { text: `${result.targetName} was removed from the room by member vote and blocked for one hour.` });
+  emitRoomInfo(room);
+}
+// Votes can also complete when a voter leaves (they no longer need to approve).
+lifecycle.on("admit", ({ room, requesterId, username, deviceId }) => {
+  const requester = io.sockets.sockets.get(requesterId);
+  if (requester && !requester.room && lifecycle.exists(room)) admit(requester, { username: requester.pendingUsername || username || "Guest", room, deviceId: requester.pendingDeviceId || deviceId });
+});
+lifecycle.on("evict", ({ room, ...result }) => completeEviction(room, result));
+
 io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id);
   features.attach(socket);
@@ -175,39 +224,6 @@ io.on("connection", (socket) => {
   });
 
   // Join Room
-  function admit(socket, { username, room, moderator = null, deviceId = null }) {
-    if (socket.room) {
-      const oldRoom = socket.room;
-      removeFromCall(socket);
-      pushService.leave(socket);
-      socket.leave(oldRoom);
-      admin.left(socket, oldRoom);
-      features.left(oldRoom);
-      lifecycle.left(oldRoom, socket.id);
-      socket.to(oldRoom).emit("system-message", { text: `${socket.username} left the room.` });
-      broadcastPresence(oldRoom);
-      broadcastCallStatus(oldRoom);
-      emitRoomInfo(oldRoom);
-    }
-    socket.join(room);
-    socket.username = username;
-    socket.room = room;
-    socket.deviceId = deviceId;
-    socket.presenceStatus = "active";
-    socket.isAdmin = Boolean(moderator); socket.adminSessionId = moderator?.id || null;
-    admin.joined(socket);
-    socket.emit("room-history", { room, entries: lifecycle.history(room) });
-    features.joined(socket);
-
-    if (socket.isAdmin) io.to(room).emit("system-message", { text: "Admin joined this room visibly for moderation." });
-    else socket.to(room).emit("system-message", { text: `${username} entered the room.` });
-
-    broadcastPresence(room);
-    broadcastCallStatus(room);
-    emitRoomInfo(room);
-    startPresenceTimeout(socket);
-  }
-
   socket.on("join-room", (data = {}) => {
     let { username, room } = data || {};
     username = String(username || "").trim().slice(0, 24);
@@ -225,7 +241,7 @@ io.on("connection", (socket) => {
     if (!moderator && !admin.canJoin(room)) return socket.emit("join-error", { error: "Admin has temporarily locked entry to this room. Try later." });
 
     const isNew = !lifecycle.exists(room);
-    if (isNew) lifecycle.ensure(room, { name: data.name, visibility: data.visibility });
+    if (isNew) lifecycle.ensure(room, { name: data.name, visibility: data.visibility, quickDelete: data.quickDelete === true });
     const info = lifecycle.roomInfo(room);
 
     // One-hour device ban after removal (member-driven eviction).
@@ -268,13 +284,7 @@ io.on("connection", (socket) => {
     if (!socket.room) return typeof ack === "function" && ack({ error: "Join a room first." });
     const result = lifecycle.voteEvict(socket.room, socket.id, data);
     if (result.evict) {
-      const target = io.sockets.sockets.get(result.targetId);
-      const reason = result.reason ? ` Reason: ${result.reason}` : "";
-      if (target && target.room === socket.room) {
-        forceLeave(target, `The room members removed you for one hour.${reason}`);
-      }
-      io.to(socket.room).emit("system-message", { text: `${result.targetName} was removed from the room by member vote and blocked for one hour.` });
-      emitRoomInfo(socket.room);
+      completeEviction(socket.room, result);
     } else if (result.error && result.error !== "You cannot vote on your own removal.") {
       socket.emit("system-message", { text: result.error });
     }
@@ -324,11 +334,12 @@ io.on("connection", (socket) => {
       if (typeof ack === "function") ack({ error: quote.error });
       return;
     }
+    const expireAfter = lifecycle.trackMessage(socket.room, { id, kind: "text", chars: message.length, senderId: socket.id });
     io.to(socket.room).emit("chat-message", {
-      id, clientId, room: socket.room, ...features.record(socket, id, { kind: "text", text: message }), reply: quote.value, username: socket.username, isAdmin: Boolean(socket.isAdmin), message,
+      id, clientId, room: socket.room, ...features.record(socket, id, { kind: "text", text: message }), reply: quote.value, username: socket.username, isAdmin: Boolean(socket.isAdmin), message, expireAfter,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
-    lifecycle.record(socket.room, { id, type: "text", username: socket.username, senderId: socket.id, isAdmin: Boolean(socket.isAdmin), text: message, reply: quote.value });
+    lifecycle.record(socket.room, { id, type: "text", username: socket.username, senderId: socket.id, isAdmin: Boolean(socket.isAdmin), text: message, reply: quote.value, expireAfter });
     admin.activity(socket, "text", Buffer.byteLength(message), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
     pushService.notify(socket, { id, title: socket.username, body: message });
     if (typeof ack === "function") ack({ ok: true, id });
@@ -338,12 +349,13 @@ io.on("connection", (socket) => {
   socket.on("voice-message", (data) => {
     if (!socket.room || !socket.username || !data || !data.audio) return;
     const id = "vn_" + randomUUID();
+    const expireAfter = lifecycle.trackMessage(socket.room, { id, kind: "voice", senderId: socket.id });
     io.to(socket.room).emit("voice-message", {
       id, room: socket.room, ...features.record(socket, id, { kind: "voice", text: "Voice note" }),
       username: socket.username,
       isAdmin: Boolean(socket.isAdmin),
       audio: data.audio,
-      mime: data.mime || "audio/webm",
+      mime: data.mime || "audio/webm", expireAfter,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
     admin.activity(socket, "voice", admin.size(data.audio), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
@@ -354,16 +366,18 @@ io.on("connection", (socket) => {
   socket.on("single-photo", (data) => {
     if (!socket.room || !socket.username || !data || !data.image) return;
     const id = "photo_" + randomUUID();
+    // View-once photos already vanish on their own; quick delete applies to regular photos.
+    const expireAfter = data.isViewOnce === false ? lifecycle.trackMessage(socket.room, { id, kind: "photo", senderId: socket.id }) : null;
     io.to(socket.room).emit("single-photo", {
       id, room: socket.room, ...features.record(socket, id, { kind: "photo", text: data.isViewOnce !== false ? "View-once photo" : "Photo" }),
       username: socket.username,
       isAdmin: Boolean(socket.isAdmin),
       image: data.image,
       caption: String(data.caption || "").slice(0, 200),
-      isViewOnce: data.isViewOnce !== false,
+      isViewOnce: data.isViewOnce !== false, expireAfter,
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
-    if (data.isViewOnce === false) lifecycle.record(socket.room, { id, type: "photo", username: socket.username, senderId: socket.id, isAdmin: Boolean(socket.isAdmin), image: data.image, caption: String(data.caption || "").slice(0, 200) });
+    if (data.isViewOnce === false) lifecycle.record(socket.room, { id, type: "photo", username: socket.username, senderId: socket.id, isAdmin: Boolean(socket.isAdmin), image: data.image, caption: String(data.caption || "").slice(0, 200), expireAfter });
     admin.activity(socket, "photo", admin.size(data.image), io.sockets.adapter.rooms.get(socket.room)?.size || 0);
     pushService.notify(socket, { id, title: socket.username, body: data.isViewOnce !== false ? "Sent a view-once photo" : "Sent a photo" });
   });
@@ -518,9 +532,15 @@ io.on("connection", (socket) => {
   });
 
   // Reset Chat
+  // Quick delete: a member's page reports which messages it has actually shown.
+  socket.on("qd-seen", (data = {}) => {
+    if (!socket.room || !socket.username) return;
+    lifecycle.markSeen(socket.room, socket.id, Array.isArray(data.ids) ? data.ids.filter(id => typeof id === "string" && id.length < 80) : []);
+  });
+
   socket.on("reset-chat", () => {
-    if (!socket.room) return;
-    clearRoom(socket.room);
+    if (!socket.room || !socket.username) return;
+    clearRoom(socket.room, socket.isAdmin ? "Admin" : socket.username);
   });
 
   // Presence

@@ -1,5 +1,5 @@
-/* Room identity, private-room approval, member removal votes and temporary
-   history replay. Manual-documented; no extra front-page marketing copy. */
+/* Room identity, private-room approval, member removal votes, temporary
+   history replay and quick delete. Manual-documented; no extra front-page copy. */
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -21,14 +21,18 @@
   }
   window.TempChatDeviceId = deviceId;
 
-  const state = { roomName: '', visibility: 'public', inviteToken: null, memberCount: 0, pending: null, shareLink: '' };
+  const state = { code: '', roomName: '', visibility: 'public', quickDelete: false, inviteToken: null, memberCount: 0, pending: null, noticeRoom: '' };
   const params = new URLSearchParams(location.search);
+  const room = () => (typeof currentRoom === 'string' ? currentRoom : '');
   window.TempChatRoom = {
     create: () => ({
       name: ($('tc-room-name-input')?.value || '').trim().slice(0, 40),
       visibility: $('tc-room-visibility')?.value === 'private' ? 'private' : 'public',
+      quickDelete: $('tc-room-quick-delete')?.value === 'on',
     }),
-    inviteToken: () => params.get('invite') || '',
+    // Invite link token from the address bar, or this member's own copy of the room key
+    // (received after joining) so reconnects never need a fresh approval.
+    inviteToken: () => params.get('invite') || (state.inviteToken && state.code && state.code === room() ? state.inviteToken : '') || '',
     deviceId,
   };
 
@@ -41,33 +45,121 @@
       '<input id="tc-room-name-input" type="text" maxlength="40" placeholder="e.g. Weekend Hangout" autocomplete="off"></label>' +
       '<label class="field-label">Who can join by room code' +
       '<select id="tc-room-visibility"><option value="public">Public — anyone with the code</option><option value="private">Private — needs member approval</option></select></label>' +
-      '<p class="tc-note">These apply only when you are the first person creating this room. A private room still lets invite-link holders join without approval.</p>';
+      '<label class="field-label">Quick delete' +
+      '<select id="tc-room-quick-delete"><option value="off">Off — messages stay until Reset or the room closes</option><option value="on">On — each message vanishes shortly after it is seen</option></select></label>' +
+      '<p class="tc-note">These apply only when you are the first person creating this room, and stay fixed until the room closes. A private room still lets invite-link holders join without approval.</p>';
     const roomGroup = $('room-input-group');
     roomGroup ? roomGroup.after(details) : form.append(details);
   }
 
-  // ---- Header identity: room name + code, always visible ----
+  // ---- Room bar: name + code always visible at the top (mobile and desktop) ----
   function renderIdentity() {
-    const roomName = $('room-name'); if (!roomName) return;
-    if (state.roomName && state.roomName !== currentRoom) {
-      roomName.textContent = `${state.roomName} · #${currentRoom}${state.visibility === 'private' ? ' 🔒' : ''}`;
-    } else {
-      roomName.textContent = `#${currentRoom}${state.visibility === 'private' ? ' 🔒' : ''}`;
-    }
-    roomName.title = `Room code: ${currentRoom} · ${state.visibility === 'private' ? 'Private' : 'Public'}`;
-    roomName.classList.toggle('tc-private-room', state.visibility === 'private');
+    const pill = $('room-name'); if (!pill) return;
+    const code = room(); if (!code) return;
+    pill.replaceChildren();
+    const named = state.code === code && state.roomName && state.roomName !== code;
+    if (named) pill.append(el('span', state.roomName, 'tc-room-title'));
+    pill.append(el('span', `#${code}`, 'tc-room-code'));
+    if (state.code === code && state.visibility === 'private') pill.append(el('span', '🔒', 'tc-room-flag'));
+    if (state.code === code && state.quickDelete) pill.append(el('span', '⏱', 'tc-room-flag'));
+    pill.title = `Room code ${code}` + (state.code === code ? ` · ${state.visibility === 'private' ? 'Private' : 'Public'}${state.quickDelete ? ' · Quick delete on' : ''}` : '') + ' · tap to share';
+    pill.classList.toggle('tc-private-room', state.code === code && state.visibility === 'private');
   }
 
   // ---- Share link: private rooms include their unguessable invite token ----
   function roomShareUrl() {
     if (state.visibility === 'private' && state.inviteToken) {
-      return `${location.origin}/?room=${encodeURIComponent(currentRoom)}&invite=${encodeURIComponent(state.inviteToken)}`;
+      return `${location.origin}/?room=${encodeURIComponent(room())}&invite=${encodeURIComponent(state.inviteToken)}`;
     }
-    return `${location.origin}/?room=${encodeURIComponent(currentRoom)}`;
+    return `${location.origin}/?room=${encodeURIComponent(room())}`;
   }
   function patchShare() {
     try { getRoomShareUrl = roomShareUrl; } catch (_) {}
     if (typeof getRoomShareUrl === 'function') getRoomShareUrl = roomShareUrl;
+  }
+
+  // ---- Quick delete (per person) ------------------------------------------------
+  // Someone else's message: my copy starts its countdown once it has actually been
+  // shown on my screen, then disappears. My own message: the server starts the
+  // countdown after everyone present has seen it. Nothing is kept afterwards.
+  const qd = new Map(); // id -> { ttl, own, seen, timer, tick, ends }
+  const seenBatch = new Set(); let seenTimer = null;
+  function label(node, text) {
+    let tag = node.querySelector(':scope > .message-bubble > .tc-qd-timer, :scope > .tc-qd-timer');
+    if (!tag) { tag = el('span', '', 'tc-qd-timer'); (node.querySelector('.message-bubble') || node).append(tag); }
+    tag.textContent = text;
+  }
+  function nodesFor(id) { try { return [...document.querySelectorAll(`[data-message-id="${CSS.escape(id)}"]`)]; } catch (_) { return []; } }
+  function register(id, ttl, own) {
+    if (!id || !ttl || qd.has(id)) return;
+    const entry = { ttl, own, seen: false, timer: null, tick: null, ends: 0 };
+    qd.set(id, entry);
+    for (const n of nodesFor(id)) { n.classList.add('tc-qd'); label(n, own ? '⏱ after everyone sees it' : `⏱ ${Math.round(ttl / 1000)}s once seen`); }
+  }
+  function voiceExtra(id) {
+    for (const n of nodesFor(id)) {
+      const m = /(\d+):(\d\d)/.exec(n.querySelector('.voice-duration')?.textContent || '');
+      if (m) return (Number(m[1]) * 60 + Number(m[2])) * 1000;
+    }
+    return 0;
+  }
+  function startCountdown(id, ms) {
+    const entry = qd.get(id); if (!entry || entry.timer) return;
+    entry.ends = Date.now() + ms;
+    const paint = () => {
+      const left = Math.max(0, Math.ceil((entry.ends - Date.now()) / 1000));
+      for (const n of nodesFor(id)) label(n, `⏱ ${left}s`);
+    };
+    paint();
+    entry.tick = setInterval(paint, 1000);
+    entry.timer = setTimeout(() => vanish(id), ms);
+  }
+  function vanish(id) {
+    const entry = qd.get(id);
+    if (entry) { clearTimeout(entry.timer); clearInterval(entry.tick); qd.delete(id); }
+    const nodes = nodesFor(id); if (!nodes.length) return;
+    for (const n of nodes) n.classList.add('tc-qd-gone');
+    setTimeout(() => nodes.forEach(n => n.remove()), 420);
+  }
+  function isVisible(node) {
+    if (!node.isConnected || !node.getClientRects().length) return false;
+    const r = node.getBoundingClientRect();
+    const x = Math.max(0, r.left) + (Math.min(innerWidth, r.right) - Math.max(0, r.left)) / 2;
+    const top = Math.max(0, r.top), bottom = Math.min(innerHeight, r.bottom);
+    if (bottom - top < Math.min(24, r.height) || x < 0 || x >= innerWidth) return false;
+    const hit = document.elementFromPoint(x, (top + bottom) / 2);
+    return Boolean(hit && node.contains(hit));
+  }
+  function flushSeen() {
+    seenTimer = null;
+    if (!seenBatch.size || !socket.connected) return;
+    const ids = [...seenBatch]; seenBatch.clear();
+    socket.emit('qd-seen', { ids });
+  }
+  function checkSeen() {
+    if (document.visibilityState !== 'visible' || !document.hasFocus() || typeof joinedChat !== 'undefined' && !joinedChat) return;
+    for (const [id, entry] of qd) {
+      const nodes = nodesFor(id);
+      if (!nodes.length) { clearTimeout(entry.timer); clearInterval(entry.tick); qd.delete(id); continue; }
+      if (entry.own || entry.seen) continue;
+      if (!nodes.some(isVisible)) continue;
+      entry.seen = true; seenBatch.add(id);
+      if (!seenTimer) seenTimer = setTimeout(flushSeen, 150);
+      startCountdown(id, Math.max(entry.ttl, voiceExtra(id) ? voiceExtra(id) + 10000 : 0));
+    }
+  }
+  setInterval(checkSeen, 800);
+  window.addEventListener('focus', checkSeen);
+  document.addEventListener('visibilitychange', checkSeen);
+  $('chat-content')?.addEventListener('scroll', checkSeen, { passive: true });
+  function registerIncoming(data) {
+    if (!data || !data.id || !data.expireAfter) return;
+    if (data.isViewOnce === true) return;
+    register(data.id, Number(data.expireAfter), data.senderId === socket.id);
+  }
+  function clearQuickDelete() {
+    for (const e of qd.values()) { clearTimeout(e.timer); clearInterval(e.tick); }
+    qd.clear(); seenBatch.clear();
   }
 
   // ---- Temporary history replay for late joiners ----
@@ -80,8 +172,10 @@
       messages.appendChild(divider);
     }
     for (const entry of entries) {
-      if (entry.type === 'text') renderHistoryText(entry);
-      else if (entry.type === 'photo') renderHistoryPhoto(entry);
+      let node = null;
+      if (entry.type === 'text') node = renderHistoryText(entry);
+      else if (entry.type === 'photo') node = renderHistoryPhoto(entry);
+      if (node && entry.id) { node.dataset.messageId = entry.id; if (entry.expireAfter) register(entry.id, Number(entry.expireAfter), entry.senderId === socket.id); }
     }
     scrollMessagesToBottom();
   }
@@ -99,6 +193,7 @@
     bubble.append(text);
     bubble.append(el('small', timeLabel(entry.at)));
     node.append(bubble); messages.append(node);
+    return node;
   }
   function renderHistoryPhoto(entry) {
     const isOwn = entry.senderId === socket.id;
@@ -115,10 +210,11 @@
     if (entry.caption) bubble.append(el('span', entry.caption));
     bubble.append(el('small', timeLabel(entry.at)));
     node.append(bubble); messages.append(node);
+    return node;
   }
 
   // ---- Approval / removal voting modal ----
-  let voteDialog = null;
+  let voteDialog = null, voteFor = '';
   function voteModal() {
     if (voteDialog && voteDialog.isConnected) return voteDialog;
     voteDialog = document.createElement('dialog'); voteDialog.className = 'tc-device-dialog tc-vote-dialog';
@@ -129,26 +225,36 @@
     voteDialog.querySelector('.tc-close').onclick = () => voteDialog.close();
     return voteDialog;
   }
-  function askVote({ title, desc, meta, onApprove, onDeny }) {
-    const d = voteModal(); $('tc-vote-title').textContent = title; $('tc-vote-desc').textContent = desc; $('tc-vote-meta').textContent = meta || '';
+  function askVote({ id, title, desc, meta, onApprove, onDeny }) {
+    const d = voteModal(); voteFor = id;
+    $('tc-vote-title').textContent = title; $('tc-vote-desc').textContent = desc; $('tc-vote-meta').textContent = meta || '';
     const approve = $('tc-vote-approve'), deny = $('tc-vote-deny');
     approve.onclick = () => { d.close(); onApprove(); }; deny.onclick = () => { d.close(); onDeny(); };
     if (!d.open) d.showModal();
   }
+  function progress(votes) {
+    const list = Array.isArray(votes) ? votes : [];
+    const yes = list.filter(v => v.vote).length;
+    return list.length ? ` ${yes} of ${list.length} approved.` : '';
+  }
+  function myVote(votes) { return (Array.isArray(votes) ? votes : []).find(v => v.id === socket.id)?.vote === true; }
 
   // ---- Private join: requester-side pending, member-side approval ----
-  function showPendingBanner(room) {
+  function showPendingBanner(data) {
     let banner = $('tc-join-pending');
     if (!banner) {
       banner = el('div', '', 'tc-join-pending'); banner.id = 'tc-join-pending';
       $('join-screen')?.append(banner);
     }
-    banner.textContent = `Waiting for members of #${room} to approve your request. You’ll enter automatically once everyone approves.`;
+    const done = Number(data.approved) || 0, total = Number(data.memberCount) || 0;
+    banner.textContent = `Waiting for the members of #${data.room} to approve your request` + (total ? ` (${done} of ${total} approved)` : '') + '. You’ll enter automatically once everyone approves.';
     banner.classList.remove('hidden');
   }
   function enterPending(data) {
+    const first = !state.pending?.active;
     state.pending = { active: true, room: data.room };
-    showPendingBanner(data.room);
+    showPendingBanner(data);
+    if (!first) return;
     joinedChat = false; clearInterval(presenceHeartbeat);
     chatScreen?.classList.add('hidden'); joinScreen?.classList.remove('hidden');
     showToast('This room is private. Your join request was sent to its members.');
@@ -189,8 +295,14 @@
 
   // ---- Socket wiring ----
   socket.on('room-info', info => {
-    state.roomName = info.name || ''; state.visibility = info.visibility; state.inviteToken = info.inviteToken; state.memberCount = info.memberCount;
+    state.code = info.code || room(); state.roomName = info.name || ''; state.visibility = info.visibility; state.quickDelete = info.quickDelete === true;
+    state.inviteToken = info.inviteToken; state.memberCount = info.memberCount;
     renderIdentity(); patchShare();
+    if (state.quickDelete && state.noticeRoom !== state.code && typeof localSystemMessage === 'function') {
+      state.noticeRoom = state.code;
+      localSystemMessage('Quick delete is on in this room: each message disappears from your screen about 10 seconds after you have seen it (longer for long texts, photos and voice notes). Your own messages go once everyone present has seen them.');
+    }
+    if (!state.quickDelete) state.noticeRoom = '';
   });
   socket.on('room-history', data => { if (data?.room === currentRoom) renderHistory(data.entries); });
   socket.on('join-pending', enterPending);
@@ -200,30 +312,37 @@
     else renderIdentity();
   });
   socket.on('join-request', data => {
+    if (myVote(data.votes)) { if (voteDialog?.open && voteFor === data.id) $('tc-vote-meta').textContent = `You approved.${progress(data.votes)}`; return; }
     askVote({
+      id: data.id,
       title: `${data.requester} wants to join`,
       desc: `Approve this person to enter #${currentRoom}? Everyone must approve before they can join.`,
-      meta: `Requested by ${data.requester}.`,
+      meta: `Requested by ${data.requester}.${progress(data.votes)}`,
       onApprove: () => socket.emit('join-vote', { id: data.id, approve: true }),
       onDeny: () => socket.emit('join-vote', { id: data.id, approve: false }),
     });
   });
-  socket.on('join-request-cancelled', () => { if (voteDialog?.open) voteDialog.close(); });
+  socket.on('join-request-cancelled', data => { if (voteDialog?.open && (!data?.id || voteFor === data.id)) voteDialog.close(); });
   socket.on('evict-request', data => {
     if (data.targetId === socket.id) return;
-    const alreadyApproved = (data.votes || []).find(v => v.id === socket.id)?.vote;
+    if (myVote(data.votes)) { if (voteDialog?.open && voteFor === data.id) $('tc-vote-meta').textContent = `You approved.${progress(data.votes)}`; return; }
     askVote({
+      id: data.id,
       title: `Remove ${data.targetName}?`,
       desc: `${data.requester} asked to remove ${data.targetName} from this room for one hour.${data.reason ? `\n\nReason: ${data.reason}` : ''}`,
-      meta: 'Everyone (except that person) must approve. A removal blocks their device from rejoining for one hour.',
+      meta: `Everyone (except that person) must approve. A removal blocks their device from rejoining for one hour.${progress(data.votes)}`,
       onApprove: () => socket.emit('evict-vote', { id: data.id, approve: true }),
       onDeny: () => socket.emit('evict-vote', { id: data.id, approve: false }),
     });
-    if (alreadyApproved) { /* already voted; do not prompt again */ }
   });
-  socket.on('evict-cancelled', () => { if (voteDialog?.open) voteDialog.close(); });
+  socket.on('evict-cancelled', data => { if (voteDialog?.open && (!data?.id || voteFor === data.id)) voteDialog.close(); });
   socket.on('presence-update', people => augmentPeopleList(people));
-  socket.on('clear-chat', () => { try { if (messages) messages.replaceChildren(); } catch (_) {} });
+  socket.on('chat-message', registerIncoming);
+  socket.on('voice-message', registerIncoming);
+  socket.on('single-photo', registerIncoming);
+  socket.on('qd-countdown', data => { if (data?.id && qd.has(data.id)) startCountdown(data.id, Number(data.ms) || 10000); });
+  socket.on('message-expired', data => { if (data?.id) vanish(data.id); });
+  socket.on('clear-chat', () => { clearQuickDelete(); try { if (messages) messages.replaceChildren(); } catch (_) {} });
 
   injectCreateOptions();
   renderIdentity();
@@ -232,9 +351,9 @@
   const guide = document.querySelector('.guide-sections');
   if (guide) {
     const section = document.createElement('div'); section.className = 'guide-section-item';
-    const title = document.createElement('h5'); title.textContent = '🛡 Rooms, names and removal';
+    const title = document.createElement('h5'); title.textContent = '🛡 Rooms, privacy, quick delete and removal';
     const body = document.createElement('p');
-    body.textContent = 'Name your room and choose public (anyone with the code joins) or private (members must approve code-based requests; invite links join directly). While a room stays open, late joiners see earlier text and regular photos. In rooms with 3 or more people, a member can ask the room to remove someone with a reason; everyone else must approve. A removed person cannot rejoin from that browser for one hour. The room code is always shown in the header. All of this resets when the room closes or is reset.';
+    body.textContent = 'Whoever creates a room can name it and choose Public (anyone with the code joins), Private (members must approve code-based requests; invite links join directly) and Quick delete. These choices stay fixed until the room closes, even if that person leaves; nobody is marked as the creator. The room name and code stay visible at the top. With Quick delete on, each message disappears from your screen about 10 seconds after you have seen it (longer for long texts, photos and voice notes); your own messages disappear once everyone present has seen them. View-once photos and calls are never kept. Late joiners see earlier text and regular photos while the room is open. Reset clears the chat for everyone and shows who cleared it. In rooms with 3 or more people, a member can ask the room to remove someone with a reason; everyone else must approve, and a removed person cannot rejoin from that browser for one hour. Screenshots and other people’s devices are outside the website’s control.';
     section.append(title, body); guide.prepend(section);
   }
 })();

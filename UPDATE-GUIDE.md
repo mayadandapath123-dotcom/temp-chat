@@ -1,69 +1,44 @@
-# TempChat — rooms, private approval, member removal and temporary history
+# TempChat — quick delete, private-room fix, named clears, visible room bar
 
-Base: GitHub main **1b10f5551d3d01ecba1d82ff25e62e28133b0f25** (the no-checkbox release).
+Base: GitHub main **672a0a9b15d46c85d6446eb662cf5c8bb10ceb3d** (the rooms release).
 
-This release adds, per your request:
+## What changed
 
-## 1. Public / private rooms and room naming
-- When you create a room (first person for that code), optional name + **Public / Private** choice. Default is Public.
-- **Public:** anyone who types the code joins directly.
-- **Private:** typing the code sends a join request to every current member; all must approve. A **private invite link** (contains an unguessable token) joins without approval.
-- The first creator's choice stays until the room closes. The **room code and name are always visible** in the header (including mobile).
+### 1. Who cleared the chat
+- Reset now posts **"Name cleared the chat for everyone."** in the chat (and in the toast) for every member. Admin clears keep their existing admin notice.
 
-## 2. Member removal by vote (3+ members)
-- In the **Room members** list, when 3 or more people are present, each member gets a **Remove** button (not for yourself, not for a verified Admin).
-- The requester explains why (visible to members), then everyone **except the person being removed** must approve (the requester already counts).
-- On unanimous approval the person is removed and **blocked from rejoining from that browser/device for one hour**, under any username.
-- A website cannot reliably block a SIM card, Wi-Fi, location or physical device. The block uses a persistent browser identifier; incognito windows, another browser, clearing site data, or a different device can bypass it. This limitation is stated in the manual.
+### 2. Quick delete (new-room option, creator's choice)
+- In **⚙️ New-room options** there is a third setting: **Quick delete — Off / On**. Like the name and Public/Private, it is fixed when the room is created and stays until the room closes, even if that person leaves. Nobody is labelled as the creator anywhere.
+- **Per person:** someone else's message disappears from *your* screen about **10 seconds after it was actually shown to you** (page open and focused). Long texts get more time (about 15 characters per second, up to 90 s); regular photos 15 s; voice notes 45 s or their length + 10 s, whichever is longer.
+- **Your own message** disappears once **everyone present has seen it**, then the same countdown. A member who leaves no longer holds it up. A late joiner who receives it from history must also see it first.
+- The message is removed from the temporary late-join history at that moment. View-once photos already vanish on their own; calls are never stored.
+- A small **⏱** pill on each message shows the countdown; the room bar shows ⏱ while quick delete is on; a one-line notice appears in the chat when you join such a room. Nothing about this is written on the join screen beyond the option itself; details live in the user manual.
+- Limits: a message that was never shown (tab in background, phone locked) stays until it is; screenshots and other people's devices are outside the website's control.
 
-## 3. Temporary in-room history (late joiners see context)
-- While a room is open, text messages, reply references and regular photos are held in memory.
-- A person joining later receives these so they can see the earlier topic.
-- **Cleared when the room is Reset**, and when the room closes (the last member leaves). No voice notes, view-once photos or call streams are retained.
-- This is the only storage for the new features. The retired seven-day admin archive is removed in this release (see below).
+### 3. Private room loophole closed
+- Previously any extra tab/window on a device that already had a member inside was let in without approval (a reconnect shortcut). That shortcut is gone: **every code-based join needs approval by everyone present**, no matter which device.
+- Members reconnecting after a network blip still get back in automatically because their page keeps the room's own invite key and sends it on reconnect.
+- Also fixed: if the only member who had not yet voted leaves, the join (or removal) request now completes instead of expiring; approvers are no longer re-prompted after voting; the person waiting sees "x of y approved"; removals/kicks now tell the room bookkeeping that the member left.
 
-## 4. Retiring the old seven-day admin archive
-- The 7-day Neon chat archive, its admin viewer and the retention notice are removed.
-- New chat is temporary again ("nothing stored after reset/close").
-- **Keep** `ARCHIVE_DATABASE_URL`, `ARCHIVE_CLEANUP_TOKEN` and the GitHub cleanup workflow **until the old rows expire and the cleanup endpoint reports `remaining: 0`**, then remove them. The cleanup module deletes only already-expired rows; it can never read content or add new data.
-- Keep `ADMIN_KEY` for the private live-moderation console (live rooms/members only; no chat-history viewer).
+### 4. Room name and code always visible
+- A **room bar** sits under the header on phones and desktops: room name (if any), the code in large monospace, 🔒 for private and ⏱ for quick delete. Tap it to open the share options. The old tiny pill that was hidden on phones is gone.
 
 ## Install and deploy
-Save **TempChat-Rooms-v2.zip** to Downloads, then:
+Save **TempChat-QuickDelete.zip** to Downloads, then:
 
 ```bash
 cd ~/Downloads &&
-unzip -o TempChat-Rooms-v2.zip -d "$HOME/Downloads" &&
-bash "$HOME/Downloads/temp-chat-rooms/deploy-existing.sh"
+unzip -o TempChat-QuickDelete.zip -d "$HOME/Downloads" &&
+bash "$HOME/Downloads/temp-chat-quickdelete/deploy-existing.sh"
 ```
 
-If the installer stops with *"uncommitted/untracked changes"*, your local folder still holds files from an earlier update that was never pushed (for example the temporary-mode retirement, which this release already includes). Save them into a Git stash — nothing is deleted — and run the installer again:
+The installer uses `~/Documents/Projects/temp-chat`, verifies repo/base/clean tree, backs up your source, copies release files and runs the tests. Type **DEPLOY** to commit and push. It never force-pushes, deletes secret files or databases, or touches the typing website.
 
-```bash
-cd ~/Documents/Projects/temp-chat &&
-git stash push --include-untracked -m "pre-rooms leftovers" &&
-git status --short --untracked-files=all
-```
+No new environment variables. Keep `ADMIN_KEY`; keep `ARCHIVE_DATABASE_URL` + `ARCHIVE_CLEANUP_TOKEN` + the hourly cleanup workflow until the cleanup reports `remaining: 0`.
 
-An empty result means the folder is clean. The stash stays available via `git stash list`.
-
-The installer uses `~/Documents/Projects/temp-chat`, verifies repo/base/clean tree, backs up your source, copies release files, deletes the retired archive files, and runs tests. Type **DEPLOY** to commit/push. It never force-pushes or deletes secret files/databases.
-
-Existing Render service/repo/branch stay the same (build `npm ci`, start `npm start`). After it goes Live, close/reopen old tabs once.
-
-## Safe push after local testing
-```bash
-cd ~/Documents/Projects/temp-chat &&
-npm test &&
-git add -- server.js package.json package-lock.json .gitignore .env.example UPDATE-GUIDE.md TEST-REPORT.md public/admin-client.js public/app.js public/camera-manager.js public/camera-zoom.js public/enhancements.css public/exit-room.js public/icons/apple-touch-icon.png public/icons/badge-96.png public/icons/icon-192.png public/icons/icon-512.png public/index.html public/links.js public/manifest.webmanifest public/notifications.js public/push-store.js public/push-worker-core.js public/refresh.js public/replies.js public/room-controls.js public/room-features.css public/room-features.js public/style.css public/sw.js public/zoom-ui.js admin/admin.css admin/admin.js admin/index.html lib/admin-control.js lib/push-service.js lib/retired-archive-cleanup.js lib/room-features.js lib/room-lifecycle.js scripts/generate-admin-key.js scripts/generate-archive-secrets.js scripts/generate-push-keys.js tests/admin.test.js tests/camera-manager.test.js tests/links.test.js tests/notifications.test.js tests/push-service.test.js tests/room-features.test.js tests/room-lifecycle.test.js tests/temporary-mode.test.js tests/zoom.test.js .github/workflows/archive-cleanup.yml lib/chat-archive.js lib/archive-codec.js lib/archive-routes.js public/archive-notice.js admin/archive-viewer.js admin/archive-viewer.css tests/archive-codec.test.js tests/archive-notice.test.js tests/archive-postgres.test.js &&
-git commit -m "Add rooms, private approval, member removal and temporary history" &&
-git push origin main
-```
-
-## Rollback warning
-If HEAD is exactly **Add rooms, private approval, member removal and temporary history**, a revert restores the old archive-capable code — which, with old archive environment values still set, could start storing again. Don't roll back casually. Inspect the commit and ask if unsure.
-
-## Notes / limitations
-- Removal ban and room identity/visibility/history are memory-only and reset when the room closes or the server restarts (Render free tier can restart). A closed room is a fresh room when recreated.
-- History is capped and is best-effort, not a durable transcript. It is not end-to-end encrypted and members can still screenshot.
-- These features are documented in the user manual only, as requested.
+## After Render shows Live
+Close and reopen old TempChat tabs/app windows, then check:
+1. Create a room with Quick delete **On** on one phone; the bar shows name, code and ⏱; the join notice appears once.
+2. Second device: read a message → it counts down and vanishes there; the sender's copy waits until every present member has seen it.
+3. Reset → "Name cleared the chat for everyone."
+4. Private room: a second tab on an approved phone must still be approved by everyone; the approver gets no second popup.
