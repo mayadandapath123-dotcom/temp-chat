@@ -43,7 +43,7 @@
   }
   function applyPalette(target, palette, colors) {
     const vars = palette === 'custom' ? buildPalette(colors) : null;
-    target.dataset.roomTheme = vars ? 'custom' : (palette === 'custom' ? 'gold' : palette);
+    target.dataset.roomTheme = vars ? 'custom' : (palette === 'custom' ? 'graphite' : palette);
     for (const k of CUSTOM_VARS) { if (vars) target.style.setProperty(k, vars[k]); else target.style.removeProperty(k); }
   }
 
@@ -188,7 +188,7 @@
     shadeLabel.append(shadeText, range); body.append(shadeLabel);
     range.oninput = () => { shade = Number(range.value); shadeText.textContent = `Wallpaper dark overlay · ${shade}%`; updatePreview(); };
     const actions = el('div', '', 'tc-actions'); body.append(actions);
-    button(actions, 'Remove wallpaper', () => { job++; busy = false; photo = null; action = 'remove'; input.value = ''; closeCrop(); if (draftURL) URL.revokeObjectURL(draftURL); draftURL = null; if (selected === 'custom') { selected = 'gold'; colors = null; paintChoices(); } info.textContent = 'Wallpaper will be removed when you apply.'; updatePreview(); }, 'tc-button tc-secondary');
+    button(actions, 'Remove wallpaper', () => { job++; busy = false; photo = null; action = 'remove'; input.value = ''; closeCrop(); if (draftURL) URL.revokeObjectURL(draftURL); draftURL = null; if (selected === 'custom') { selected = 'graphite'; colors = null; paintChoices(); } info.textContent = 'Wallpaper will be removed when you apply.'; updatePreview(); }, 'tc-button tc-secondary');
     const apply = button(actions, 'Apply for everyone', async () => {
       if (busy) return;
       if (selected === 'custom' && !colors) { info.textContent = 'Pick “Colours from photo” first, or choose another theme.'; return; }

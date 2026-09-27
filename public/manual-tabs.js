@@ -7,8 +7,8 @@
   const items = [...guide.querySelectorAll(':scope > .guide-section-item')]; if (items.length < 4) return;
   const tabs = [
     { id: 'start', label: 'Rooms', match: /invite|room name|links and exit|refresh/i },
-    { id: 'messages', label: 'Messages & media', match: /photo|voice note|reply|receipt|theme|quick delete|late joiners|reset/i },
-    { id: 'calls', label: 'Calls', match: /call|camera|zoom|mute|mic|listen|talking|maximize|screen shar/i },
+    { id: 'messages', label: 'Messages & media', match: /photo|voice note|reply|receipt|theme|quick delete|late joiners|reset|download/i },
+    { id: 'calls', label: 'Calls', match: /call|camera|zoom|mute|mic|listen|talking|maximize|screen shar|pin|speaker|quality/i },
     { id: 'safety', label: 'Privacy & safety', match: /remov|privacy|safety|notif|data/i },
   ];
   const buckets = new Map(tabs.map(t => [t.id, []]));

@@ -80,3 +80,33 @@ test('a person waiting outside a private room can cancel, which closes the membe
   const again = event(a.s, 'join-request'); q.emit('join-room', { room: 'PRIVC', username: 'Quin', deviceId: 'device_quin000000000000000' });
   await event(q, 'join-pending'); const r2 = await again; assert.notEqual(r2.id, req.id);
 });
+
+test('call quality: Auto shrinks with the crowd, the lowest cap rules everyone, and the limiter is named', async () => {
+  const a = await join('QUAL1', 'Alpha'), b = await join('QUAL1', 'Bravo');
+  const started = event(b.s, 'call-start'), qa = event(a.s, 'call-quality-state');
+  a.s.emit('call-start', { callType: 'video' }); await started;
+  assert.equal((await qa).effective, 400, 'two people → auto 400');
+  const qb = event(b.s, 'call-quality-state', q => q.participants === 2); b.s.emit('call-join', { callType: 'video', quality: 426 });
+  const s2 = await qb; assert.equal(s2.effective, 400, 'Bravo capped at 240p-class 426 but auto for two is 400, which is lower');
+  const low = event(a.s, 'call-quality-state', q => q.effective === 256);
+  b.s.emit('call-quality', { maxDim: 256 }); const s3 = await low; assert.deepEqual(s3.limitedBy, ['Bravo']);
+  b.s.emit('call-quality', { maxDim: 999 }); // junk is ignored
+  await never(a.s, 'call-quality-state', 400);
+  const c = await join('QUAL1', 'Charlie'); const qc = event(c.s, 'call-quality-state'); c.s.emit('call-join', { callType: 'video', quality: 1280 });
+  const s4 = await qc; assert.equal(s4.participants, 3); assert.equal(s4.auto, 320); assert.equal(s4.effective, 256, 'still Bravo’s 256');
+  const back = event(a.s, 'call-quality-state', q => q.effective === 320);
+  b.s.emit('call-quality', { maxDim: 0 }); assert.deepEqual((await back).limitedBy, [], 'auto for three people limits nobody by name');
+  const drop = event(a.s, 'call-quality-state', q => q.participants === 2); c.s.emit('call-leave'); assert.equal((await drop).effective, 400);
+});
+
+test('pin for everyone reaches every participant, late joiners included, and clears when that person leaves', async () => {
+  const a = await join('SPOT1', 'Alpha'), b = await join('SPOT1', 'Bravo');
+  const started = event(b.s, 'call-start'); a.s.emit('call-start', { callType: 'video' }); await started;
+  const joined = event(a.s, 'call-peer-joined'); b.s.emit('call-join', { callType: 'video' }); const bid = (await joined).id;
+  const spotA = event(a.s, 'call-spotlight-state', d => d.id === bid), spotB = event(b.s, 'call-spotlight-state', d => d.id === bid);
+  a.s.emit('call-spotlight', { id: bid }); const s = await spotA; await spotB;
+  assert.equal(s.by, 'Alpha'); assert.equal(s.username, 'Bravo');
+  const c = await join('SPOT1', 'Charlie'); const late = event(c.s, 'call-spotlight-state', d => d.id === bid); c.s.emit('call-join', { callType: 'video' }); await late;
+  a.s.emit('call-spotlight', { id: 'nobody' }); await never(c.s, 'call-spotlight-state', 400);
+  const cleared = event(a.s, 'call-spotlight-state', d => d.id === null); b.s.emit('call-leave'); await cleared;
+});

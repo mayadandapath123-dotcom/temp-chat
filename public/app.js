@@ -2952,6 +2952,7 @@ socket.on("disconnect", () => {
 
 (function tempchatV4() {
   "use strict";
+  let shareAudioStream = null, shareSourceNode = null, shareGain = null, micGain = null;
 
   // Remove anything the older v2 block injected, so pasting both is safe.
   ["more-button", "more-sheet", "screen-share-button", "camera-modal", "mic-status-chip"]
@@ -3287,13 +3288,15 @@ socket.on("disconnect", () => {
       }
     }, VIDEO_FRAME_INTERVAL_MS);
 
-    if (localStream && localStream.getAudioTracks().length > 0) {
+    const hasMic = Boolean(localStream && localStream.getAudioTracks().length > 0);
+    if (hasMic || shareAudioStream) {
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (AudioCtx) {
           audioContextSender = new AudioCtx();
           if (audioContextSender.state === "suspended") audioContextSender.resume().catch(() => {});
-          audioSourceNode = audioContextSender.createMediaStreamSource(localStream);
+          audioSourceNode = hasMic ? audioContextSender.createMediaStreamSource(localStream) : null;
+          micGain = audioContextSender.createGain(); micGain.gain.value = 1;
 
           const VAD_THRESHOLD = 0.002; // legacy fallback, no longer used directly
           let vadHangover = 0;
@@ -3303,26 +3306,34 @@ socket.on("disconnect", () => {
           audioProcessorNode = audioContextSender.createScriptProcessor(2048, 1, 1);
           audioProcessorNode.onaudioprocess = (e) => {
             if (!inCall) return;
+            const shareOn = window.__tcShareAudioOn === true; // shared video / screen sound is mixed in
+            if (micGain) micGain.gain.value = shareOn && isMicMuted ? 0 : 1;
             const ch = e.inputBuffer.getChannelData(0);
             let sum = 0;
             for (let i = 0; i < ch.length; i++) sum += ch[i] * ch[i];
             const rms = Math.sqrt(sum / ch.length);
 
-            // Noise-adaptive decision (replaces the old fixed threshold).
-            const voiced = vadProcess(rms);
+            if (!shareOn) {
+              // Noise-adaptive decision (replaces the old fixed threshold).
+              const voiced = vadProcess(rms);
 
-            // Runs even while muted so it can un-mute you when you speak.
-            if (autoMuteEnabled) updateAutoMute(voiced);
+              // Runs even while muted so it can un-mute you when you speak.
+              if (autoMuteEnabled) updateAutoMute(voiced);
 
-            // Your own glow -- local only, no bytes.
-            if (voiced && !isMicMuted) markSpeaking("me");
+              // Your own glow -- local only, no bytes.
+              if (voiced && !isMicMuted) markSpeaking("me");
 
-            if (isMicMuted) return;
-            if (remotePeers.size === 0) return;
+              if (isMicMuted) return;
+              if (remotePeers.size === 0) return;
 
-            if (voiced) vadHangover = HANGOVER_MAX;
-            else if (vadHangover > 0) vadHangover--;
-            else return; // silence: transmit nothing
+              if (voiced) vadHangover = HANGOVER_MAX;
+              else if (vadHangover > 0) vadHangover--;
+              else return; // silence: transmit nothing
+            } else {
+              // While sharing sound, send continuously (music has quiet parts); mic follows the mute button via micGain.
+              if (remotePeers.size === 0) return;
+              if (rms > 0.01 && !isMicMuted) markSpeaking("me");
+            }
 
             const inputRate = audioContextSender.sampleRate || 48000;
             const factor = Math.max(1, Math.round(inputRate / 16000));
@@ -3336,11 +3347,12 @@ socket.on("disconnect", () => {
             socket.emit("audio-pcm", { pcm: pcm16.buffer, sampleRate: Math.round(inputRate / factor) });
           };
 
-          audioSourceNode.connect(audioProcessorNode);
+          if (audioSourceNode) { audioSourceNode.connect(micGain); micGain.connect(audioProcessorNode); }
           audioSilentGain = audioContextSender.createGain();
           audioSilentGain.gain.value = 0;
           audioProcessorNode.connect(audioSilentGain);
           audioSilentGain.connect(audioContextSender.destination);
+          attachShareAudioToGraph();
         }
       } catch (e) { console.warn("PCM voice sender error:", e); }
     }
@@ -3545,6 +3557,31 @@ socket.on("disconnect", () => {
   --------------------------------------------------------------- */
   let screenStream = null, cameraStreamBackup = null, screenShareButton = null, shareCleanup = null, shareBusy = false;
   window.__isScreenSharing = false;
+  // Sound from a shared screen/tab or a shared video is mixed into your voice stream.
+  function attachShareAudioToGraph() {
+    if (!shareAudioStream || !audioContextSender || !audioProcessorNode) return;
+    try {
+      shareSourceNode = audioContextSender.createMediaStreamSource(shareAudioStream);
+      shareGain = audioContextSender.createGain(); shareGain.gain.value = 0.9;
+      shareSourceNode.connect(shareGain); shareGain.connect(audioProcessorNode);
+      window.__tcShareAudioOn = true;
+    } catch (e) { console.warn("share audio:", e); }
+  }
+  function setShareAudio(stream) {
+    detachShareAudio();
+    const track = stream && stream.getAudioTracks ? stream.getAudioTracks()[0] : null;
+    if (!track) return false;
+    shareAudioStream = new MediaStream([track]);
+    track.addEventListener("ended", () => { if (shareAudioStream && shareAudioStream.getAudioTracks()[0] === track) detachShareAudio(); });
+    if (!audioProcessorNode && inCall) startLiveStreamingPipes(); else attachShareAudioToGraph();
+    return window.__tcShareAudioOn === true;
+  }
+  function detachShareAudio() {
+    window.__tcShareAudioOn = false;
+    try { if (shareSourceNode) shareSourceNode.disconnect(); if (shareGain) shareGain.disconnect(); } catch (e) {}
+    shareSourceNode = null; shareGain = null; shareAudioStream = null;
+    try { vadReset(); } catch (e) {}
+  }
   // Phones and tablets cannot capture their screen from a browser (no getDisplayMedia on
   // Android Chrome, iPhone or iPad). There, Share offers a photo or video from the device instead.
   const PHONE_LIKE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
@@ -3560,7 +3597,9 @@ socket.on("disconnect", () => {
       if (canCaptureScreen) {
         try {
           screenStream = await navigator.mediaDevices.getDisplayMedia({
-            video: { frameRate: { ideal: 8, max: 12 } }, audio: false,
+            video: { frameRate: { ideal: 8, max: 12 } },
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, // tab/system sound when the picker allows it
+            systemAudio: "include", selfBrowserSurface: "exclude",
           });
         } catch (err) {
           if (err && err.name === "NotAllowedError") return;
@@ -3587,8 +3626,10 @@ socket.on("disconnect", () => {
     window.__activeVideoQuality = SCREEN_SHARE_QUALITY;
 
     if (screenShareButton) screenShareButton.classList.add("active");
+    const withSound = setShareAudio(screenStream);
     socket.emit("call-media-state", { video: true, audio: !isMicMuted, sharing: true });
-    showToast(picked ? (picked.kind === "video" ? "Sharing your video with the call (no sound). Tap Share again to stop." : "Sharing your photo with the call. Tap Share again to stop.") : "Screen sharing started.");
+    showToast(picked ? (picked.kind === "video" ? (withSound ? "Sharing your video with sound. Tap Share again to stop." : "Sharing your video (its sound could not be captured). Tap Share again to stop.") : "Sharing your photo with the call. Tap Share again to stop.")
+      : (withSound ? "Screen sharing started with sound." : "Screen sharing started. To include sound, tick “Share audio” in the picker next time."));
 
     const track = screenStream.getVideoTracks()[0];
     if (track) track.addEventListener("ended", stopScreenShare);
@@ -3597,6 +3638,7 @@ socket.on("disconnect", () => {
   function stopScreenShare() {
     if (!window.__isScreenSharing) return;
     window.__isScreenSharing = false;
+    detachShareAudio();
     if (screenStream) { screenStream.getTracks().forEach((t) => t.stop()); screenStream = null; }
     if (shareCleanup) { try { shareCleanup(); } catch (e) {} shareCleanup = null; }
 
@@ -3965,9 +4007,13 @@ socket.on("disconnect", () => {
       section("📞", "Auto Listen", "In <strong>⋯ Settings</strong>. Incoming calls answer themselves — no Accept tap. It answers voice-only on purpose, so your camera never switches on without you knowing.") +
       section("🟢", "Who's Talking", "Whoever is speaking gets a <strong>green glowing ring</strong> and animated bars on their tile. This costs no extra data at all — TempChat already only sends audio while somebody is actually talking, so the glow rides along with the sound.") +
       section("⛶", "Call layout & maximize", "Tiles arrange themselves so everyone fits on the screen, on phones and laptops. Tap <strong>⛶</strong> on a tile (or double-tap it) to make that person large while the others stay as small thumbnails — handy for a shared screen. Tap <strong>✕</strong> or press <strong>Esc</strong> to go back. Layout only, no extra data.") +
-      section("🖥️", "Share in a call", "Tap the <strong>Share</strong> button in the call. On a <strong>laptop or desktop</strong> it shares your screen. Phone and tablet browsers are not allowed to capture the screen, so there it shares a <strong>photo or video from your device</strong> instead — for example a screenshot or a screen recording you just made (videos share without sound). Everyone sees it letterboxed, never cropped. Tap Share again to stop.") +
+      section("🖥️", "Share in a call", "Tap the <strong>Share</strong> button in the call. On a <strong>laptop or desktop</strong> it shares your screen — tick <strong>Share audio</strong> in the browser picker to send the tab or system sound too. Phone and tablet browsers are not allowed to capture the screen, so there it shares a <strong>photo or video from your device</strong> instead (a screenshot or a screen recording you just made); a shared video plays <strong>with its sound</strong>. Everyone sees it letterboxed, never cropped. Tap Share again to stop.") +
+      section("📶", "Call quality", "Open the call’s <strong>⚙ Settings</strong> (or tap the quality pill in the call header): <strong>Auto</strong> lowers the picture size as more people join to save data; or pick <strong>144p · 240p · 360p · 480p · 720p</strong>. The whole call runs at the <strong>lowest</strong> choice, so your pick also sets what you receive. 480p and 720p use a lot of data for everyone.") +
+      section("📌", "Pin, maximize, fit", "Tap <strong>⋯</strong> on a tile: <strong>Maximize for me</strong> (just your screen), <strong>Pin for everyone</strong> (that person becomes large on every screen until unpinned), and <strong>Fit / Fill</strong> to show the whole picture or fill the tile.") +
+      section("🔈", "Speaker or earpiece", "On Android phones a speaker button in the call switches your own listening between the <strong>loudspeaker</strong> and the <strong>earpiece</strong>. Only your phone changes. iPhone browsers do not offer this switch.") +
       section("📷", "Direct Camera", "The <strong>📷</strong> button opens a real in-app camera with a live preview, shutter and front/back flip — it no longer opens your file manager. Use <strong>🖼️</strong> to pick an existing photo instead.") +
-      section("①", "View-Once Photos", "Photos marked view-once self-destruct after being opened and are wiped from memory. The sender is told the moment you open one.") +
+      section("①", "View-Once Photos", "Photos marked view-once self-destruct after being opened and are wiped from memory. The sender is told the moment you open one. They can never be downloaded.") +
+      section("⤓", "Download photos", "Regular photos have a <strong>⤓</strong> button (on the photo and in the full-screen view) that saves the picture to your device. It is available in public rooms and in private rooms without quick delete; private rooms with quick delete on hide it.") +
       section("🎙️", "Voice Notes", "Hold or tap the mic in the composer to record up to 60 seconds, with a scrubbable waveform.") +
       section("🔔", "Notifications", "Open <strong>⋯ → Joined-room notifications</strong>. Permission is per device and site address. Enable joined-room notifications to request browser permission. Alerts only work while this chat page stays joined, connected and running in a background tab/app. Exit, close or disconnect to stop them. A fully suspended browser may not deliver alerts. No server Web Push is used.") +
       section("🔗", "Invite Friends", "Share the <code>?room=CODE</code> link. Friends only pick a username to join.") +

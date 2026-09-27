@@ -152,3 +152,11 @@ video.tc-zoom-preview.mirrored,.self-tile.mirrored video.tc-zoom-preview { trans
 .join-card .text-link-btn { text-decoration: none; font-size: 12px; opacity: .9; padding: 4px 2px; }
 .join-card .tc-dot-sep { color: var(--subtle); }
 .join-card .security-footer { margin-top: 12px; font-size: 10.5px; }
+
+/* Photo download */
+.message-bubble.tc-has-photo { position: relative; }
+.tc-dl { position: absolute; top: 34px; right: 14px; width: 30px; height: 30px; border-radius: 9px; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.5); color: #fff; font-size: 15px; font-weight: 800; cursor: pointer; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: inline-flex; align-items: center; justify-content: center; }
+.tc-dl:hover { background: rgba(0,0,0,.7); }
+#messages.tc-no-download .tc-dl { display: none; }
+.tc-lightbox-dl { height: 32px; padding: 0 12px; border-radius: 99px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; margin-right: 6px; }
+.tc-lightbox-dl.hidden { display: none; }

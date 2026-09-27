@@ -1,51 +1,50 @@
-# TempChat — call screen redesign, phone sharing, smooth zoom, theme studio, calmer join
+# TempChat — Graphite look, White glass, photo download, share with sound, call quality, pin for everyone, speaker switch, zoom fix
 
-Base: GitHub main **a200690eb76eece32e2ccad6d6422891ab5ad0fb** (the header/quick-delete/manual polish release).
+Base: GitHub main **c7c06c7a798453d7954fa88571700877eef30d13** (the call-screen release).
 
 ## What changed
 
-### 1. Video call screen (phones and laptops)
-- **Everyone fits.** Tiles are sized by a small layout engine: 3 people on a phone = two on top, one centred below; 4 = 2×2; more = more rows. Nothing hides behind the bottom bar any more, in portrait or landscape.
-- **One calm bottom bar**, always a single row: Mic · Camera · Flip · Share · Chat · Settings · End. Every button is still there; only the arrangement changed.
-- **Compact top bar**: room + mic status on the left, timer / fullscreen / Exit / Refresh on the right (icon-only Refresh on phones).
-- **Zoom presets sit on your own tile** like a camera app (a vertical strip when the tile is narrow).
-- **Maximize** now shows the big person plus small thumbnails of everyone else (before, the others disappeared).
-- Camera tiles fill their box; shared screens / photos are letterboxed with a “Sharing” badge, never cropped. Speaking is a thin accent ring instead of a thick green frame.
+### 1. A cleaner default look
+The gold tone is gone from the default. **Graphite** — cool neutral surfaces with a calm blue accent — is now the default on the join screen and in every new room. *Midnight gold* is still available in Shared themes for anyone who wants it.
 
-### 2. Share from a phone
-Phone and tablet browsers (Android Chrome, iPhone, iPad) are **not allowed to capture the screen** — there is no browser API for it, so no website can offer true screen share there. TempChat now does the closest possible thing: on those devices the **Share** button lets you pick a **photo or video from the phone** (a screenshot or a screen recording you just made) and streams it to the call as your picture. Videos share without sound. Laptops keep real screen sharing. Manual explains this honestly.
+### 2. White glass theme
+Alongside Liquid glass: **White glass** — bright frosted panels, dark text, soft pastel light behind. Pick it in Settings → Shared themes & wallpaper; it applies to everyone in the room like all themes.
 
-### 3. Buttery-smooth zoom
-1× → 2× → 3× → 10× now glides (about 0.4 s, eased, log-scaled) instead of jumping — for your preview, the frames sent to others, and the device lens where the camera supports zoom. Taps during a glide are queued, never ignored; the pressed state responds instantly.
+### 3. Download photos
+Regular photos now carry a **⤓** button (on the photo and in the full-screen view) that saves the picture to the device. Rules exactly as asked: available in **public rooms** and in private rooms **without** quick delete; a **private room with quick delete on hides it**. View-once photos can never be downloaded.
 
-### 4. Theme studio (Settings → Shared themes & wallpaper)
-- **True preview**: a small phone (or laptop) chat mock with the same wallpaper rules as the real room. Toggle Phone / Laptop.
-- **Crop tool**: drag, pinch, wheel or slider; choose a phone or laptop frame. The saved wallpaper is exactly the framed area (≤ 220 KB, ≤ 1280 px).
-- **✨ Colours from photo**: two main colours are read from the photo on your device (nothing uploaded); a full theme is built from them and shared with the room. Only the two colours travel to the server.
-- **Liquid glass** theme: translucent blurred surfaces over soft colour.
-- All of it stays room-shared and temporary, as before.
+### 4. Share with sound (phone and laptop)
+The phone share flow is unchanged. What is new: a **shared video now plays with its sound** for everyone (you hear it too), and on a laptop **screen share carries the tab/system sound** when you tick “Share audio” in the browser’s picker. The sound is mixed into your voice stream; your mic still follows the mute button. Bandwidth note: sound is sent continuously while sharing.
 
-### 5. Simpler first screen
-Short description, clear labels (“Your name”, “Room code — make one up, or type a friend’s”), one line of small links, options for a new room folded away. No feature list to scare anyone.
+### 5. Call quality — Auto by crowd size, or your choice
+- **Auto** (default): the picture size shrinks as people join — 2 people ≈ today’s quality, 3–4 smaller, 5–6 smaller again, 7–8 smallest — to protect bandwidth.
+- Or choose **144p · 240p · 360p · 480p · 720p** in the call’s ⚙ Settings (a quality pill in the call header opens it). The **whole call runs at the lowest choice** anyone made, so your pick sets both what you send and what you receive; the status line names who is limiting it.
 
-### 6. Private-room waiting screen
-A proper card state: spinner, “Waiting for approval”, “x of y approved”, and a **Cancel request** button (members’ prompt closes). The misleading “Joined Room” toast no longer appears while waiting.
+### 6. Tiles: pin for everyone, maximize, fit/fill
+Every tile has a **⋯** menu: *Maximize for me* (your screen only), *Pin … for everyone* (that person becomes large on every screen until unpinned; late joiners get it too), and *Fit / Fill*.
+
+### 7. Speaker or earpiece (voice and video calls)
+On Android phones a speaker button in the call switches **your own** listening between loudspeaker and earpiece. iPhone browsers do not expose this switch (the button is not shown there).
+
+### 8. Bug fix: zoom missing in a second call
+After a call ended, the zoom presets were removed together with your tile, so the next call (private room or not) had no zoom. They now come back every call.
 
 ## Install and deploy
-Save **TempChat-Calls.zip** to Downloads, then:
+Save **TempChat-Final.zip** to Downloads, then:
 
 ```bash
 cd ~/Downloads &&
-unzip -o TempChat-Calls.zip -d "$HOME/Downloads" &&
-bash "$HOME/Downloads/temp-chat-calls/deploy-existing.sh"
+unzip -o TempChat-Final.zip -d "$HOME/Downloads" &&
+bash "$HOME/Downloads/temp-chat-final/deploy-existing.sh"
 ```
 
 Type **DEPLOY** when the tests pass. No new environment variables.
 
 ## After Render shows Live
-Close and reopen every old TempChat tab/app window, then check on a phone and a laptop:
-1. 3-person video call: all three visible on the phone; one-row bar; maximize shows thumbnails.
-2. Phone: Share → pick a screenshot → laptop sees it letterboxed with “Sharing”. Laptop: Share → real screen share.
-3. Zoom 1× → 3× glides.
-4. Settings → Shared themes: add a photo, crop, “Colours from photo”, apply; try Liquid glass.
-5. Open the site fresh: simpler join card. Private room: waiting card with Cancel.
+Close and reopen old tabs/app windows, then:
+1. Join screen and a new room look graphite/blue. Shared themes → White glass.
+2. Send a normal photo → ⤓ downloads; a private + quick-delete room shows no ⤓.
+3. Phone: Share a video → others hear it. Laptop: Share screen, tick “Share audio”.
+4. 3 people in a call → header pill shows the auto quality; pick 144p on one phone → everyone drops; status names that person.
+5. ⋯ on a tile → Pin for everyone. Android: speaker ↔ earpiece button.
+6. End a call, start another → zoom presets are there.

@@ -4,15 +4,15 @@
 ========================================================= */
 
 :root {
-  --bg: #07080b;
-  --bg-gradient: radial-gradient(circle at 50% 0%, #151824 0%, #07080b 75%);
-  --surface: #0f1118;
-  --surface-2: #161824;
-  --surface-3: #1f2333;
+  --bg: #0b0d12;
+  --bg-gradient: radial-gradient(circle at 50% 0%, #161a24 0%, #0b0d12 75%);
+  --surface: #12151c;
+  --surface-2: #1a1e28;
+  --surface-3: #242a37;
 
   /* Frosted Glass System */
-  --glass-bg: rgba(18, 21, 31, 0.78);
-  --glass-bg-heavy: rgba(12, 14, 22, 0.94);
+  --glass-bg: rgba(20, 23, 32, 0.78);
+  --glass-bg-heavy: rgba(13, 15, 21, 0.94);
   --glass-card: rgba(255, 255, 255, 0.05);
   --glass-card-hover: rgba(255, 255, 255, 0.09);
   --glass-border: rgba(255, 255, 255, 0.12);
@@ -20,19 +20,19 @@
   --glass-blur: blur(28px) saturate(200%);
   --glass-blur-sm: blur(16px) saturate(180%);
 
-  --text: #f8f9fc;
-  --text-dim: #c5c8d6;
-  --muted: #848796;
-  --subtle: #505362;
+  --text: #f4f6fa;
+  --text-dim: #c3c8d4;
+  --muted: #868c9c;
+  --subtle: #545a68;
 
-  /* Champagne Gold Accents */
-  --accent: #d4af37;
-  --accent-light: #f3df9b;
-  --accent-dark: #b89428;
-  --accent-glow: rgba(212, 175, 55, 0.35);
-  --accent-gradient: linear-gradient(135deg, #e8cb75 0%, #c49d32 100%);
-  --accent-subtle: rgba(212, 175, 55, 0.14);
-  --accent-border: rgba(212, 175, 55, 0.4);
+  /* Graphite: cool neutral surfaces with a calm blue accent (default look) */
+  --accent: #6ea8fe;
+  --accent-light: #b8d3ff;
+  --accent-dark: #3f7fe6;
+  --accent-glow: rgba(110, 168, 254, 0.3);
+  --accent-gradient: linear-gradient(135deg, #8dbcff 0%, #5a8fee 100%);
+  --accent-subtle: rgba(110, 168, 254, 0.14);
+  --accent-border: rgba(110, 168, 254, 0.4);
 
   /* Functional Accents */
   --emerald: #10b981;
@@ -175,7 +175,7 @@ button:active {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: radial-gradient(circle at 50% 10%, rgba(212, 175, 55, 0.1), transparent 55%), var(--bg);
+  background: radial-gradient(circle at 50% 10%, var(--accent-subtle), transparent 55%), var(--bg);
 }
 
 .join-card {
@@ -251,7 +251,7 @@ button:active {
   margin-bottom: 16px;
   padding: 10px 14px;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, rgba(42, 36, 20, 0.9), rgba(24, 26, 36, 0.9));
+  background: linear-gradient(135deg, rgba(22, 30, 48, 0.9), rgba(20, 23, 32, 0.9));
   border: 1px solid var(--accent-border);
   box-shadow: 0 4px 18px var(--accent-glow);
   display: flex;
@@ -363,7 +363,7 @@ button:active {
   color: #0e0f14;
   font-weight: 800;
   font-size: 15px;
-  box-shadow: 0 6px 22px rgba(212, 175, 55, 0.35);
+  box-shadow: 0 6px 22px var(--accent-glow);
 }
 
 .join-extra-links {
@@ -501,7 +501,7 @@ button:active {
 }
 
 .video-call-btn {
-  background: rgba(212, 175, 55, 0.18);
+  background: var(--accent-subtle);
   border-color: var(--accent-border);
   color: var(--accent-light);
 }
@@ -1213,9 +1213,9 @@ button:active {
 }
 
 @keyframes callRingPulse {
-  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.4); }
-  70% { transform: scale(1.06); box-shadow: 0 0 0 16px rgba(212, 175, 55, 0); }
-  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(212, 175, 55, 0); }
+  0% { transform: scale(1); box-shadow: 0 0 0 0 var(--accent-glow); }
+  70% { transform: scale(1.06); box-shadow: 0 0 0 16px transparent; }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
 }
 
 .call-overlay-title {
@@ -1266,7 +1266,7 @@ button:active {
   display: flex;
   flex-direction: column;
   padding: 10px;
-  background: radial-gradient(circle at 50% 10%, rgba(212, 175, 55, 0.08), transparent 60%), #07080b;
+  background: radial-gradient(circle at 50% 10%, var(--accent-subtle), transparent 60%), #0a0b0f;
 }
 
 .call-screen-header {
@@ -1382,7 +1382,7 @@ button:active {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 50% 40%, rgba(212, 175, 55, 0.1), #0d0f17);
+  background: radial-gradient(circle at 50% 40%, var(--accent-subtle), #0d0f17);
   z-index: 2;
 }
 
@@ -1691,7 +1691,7 @@ button:active {
 .guide-hero-banner {
   padding: 14px;
   margin-bottom: 12px;
-  background: linear-gradient(135deg, rgba(40, 35, 20, 0.8), rgba(20, 22, 32, 0.85));
+  background: linear-gradient(135deg, rgba(22, 30, 48, 0.85), rgba(18, 21, 29, 0.9));
   border: 1px solid var(--accent-border);
 }
 

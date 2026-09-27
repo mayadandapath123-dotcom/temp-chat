@@ -165,6 +165,38 @@
     qd.clear(); seenBatch.clear();
   }
 
+  // ---- Photo download (regular photos only; never view-once) ----
+  // Available in public rooms and in private rooms without quick delete.
+  function canDownload() { return !(state.visibility === 'private' && state.quickDelete); }
+  function saveImage(url) {
+    const a = document.createElement('a'); a.href = url; a.download = `tempchat-photo-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.jpg`;
+    a.rel = 'noopener'; document.body.append(a); a.click(); a.remove();
+  }
+  function decoratePhoto(img) {
+    const bubble = img.closest('.message-bubble'); if (!bubble || bubble.querySelector('.tc-dl')) return;
+    const btn = el('button', '⤓', 'tc-dl'); btn.type = 'button'; btn.title = 'Download photo'; btn.setAttribute('aria-label', 'Download photo');
+    btn.onclick = e => { e.stopPropagation(); if (!canDownload()) return showToast('Downloads are off in this private room.'); saveImage(img.currentSrc || img.src); };
+    bubble.classList.add('tc-has-photo'); bubble.append(btn);
+  }
+  function refreshDownloads() { document.getElementById('messages')?.classList.toggle('tc-no-download', !canDownload()); }
+  if (messages) {
+    messages.querySelectorAll('img.chat-photo-img').forEach(decoratePhoto);
+    new MutationObserver(list => { for (const m of list) for (const n of m.addedNodes) { if (n.nodeType !== 1) continue; if (n.matches?.('img.chat-photo-img')) decoratePhoto(n); n.querySelectorAll?.('img.chat-photo-img').forEach(decoratePhoto); } }).observe(messages, { childList: true, subtree: true });
+  }
+  // Lightbox: a Download action when a regular photo is open (view-once keeps its timer and no download).
+  const lightboxDownload = el('button', '⤓ Download', 'tc-lightbox-dl hidden'); lightboxDownload.type = 'button';
+  document.querySelector('#view-once-modal .view-once-header-right')?.prepend(lightboxDownload);
+  let lightboxUrl = '';
+  lightboxDownload.onclick = () => { if (lightboxUrl && canDownload()) saveImage(lightboxUrl); };
+  if (typeof openLightbox === 'function') {
+    const original = openLightbox;
+    openLightbox = function (url, caption) { original(url, caption); lightboxUrl = url; lightboxDownload.classList.toggle('hidden', !canDownload()); };
+  }
+  setInterval(() => {
+    const modal = $('view-once-modal'); if (!modal || modal.classList.contains('hidden')) { lightboxDownload.classList.add('hidden'); lightboxUrl = ''; return; }
+    if (($('view-once-timer')?.textContent || '') !== 'Temporary') lightboxDownload.classList.add('hidden');
+  }, 400);
+
   // ---- Temporary history replay for late joiners ----
   function timeLabel(at) { try { return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (_) { return ''; } }
   function renderHistory(entries) {
@@ -316,7 +348,7 @@
   socket.on('room-info', info => {
     state.code = info.code || room(); state.roomName = info.name || ''; state.visibility = info.visibility; state.quickDelete = info.quickDelete === true;
     state.inviteToken = info.inviteToken; state.memberCount = info.memberCount;
-    renderIdentity(); patchShare();
+    renderIdentity(); patchShare(); refreshDownloads();
     if (state.quickDelete && state.noticeRoom !== state.code && typeof localSystemMessage === 'function') {
       state.noticeRoom = state.code;
       localSystemMessage('Quick delete is on. Messages disappear shortly after they have been seen.');

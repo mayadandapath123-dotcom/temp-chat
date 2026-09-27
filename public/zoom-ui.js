@@ -39,6 +39,7 @@
     const dock = document.querySelector('.call-controls');
     const modal = document.getElementById('camera-modal');
     if (dock && !controls.has('call')) make('call', dock);
+    else if (dock && controls.has('call') && !controls.get('call').box.isConnected) dock.before(controls.get('call').box); // the self tile (its last home) was removed with the previous call
     if (modal && (!controls.has('photo') || !controls.get('photo').box.isConnected)) make('photo', modal);
     for (const [kind, c] of controls) {
       const v = kind === 'call' ? callVideo : document.getElementById('camera-stream');

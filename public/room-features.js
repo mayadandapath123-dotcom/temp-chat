@@ -4,11 +4,11 @@
   'use strict';
   const records = new Map(), pending = new Map();
   const deliveryQueue = new Set(), seenQueue = new Set();
-  let receiptTimer, ready = false, theme = { palette: 'gold', shade: 60 }, wallpaperURL = null;
+  let receiptTimer, ready = false, theme = { palette: 'graphite', shade: 60 }, wallpaperURL = null;
   let detailId = null;
   const $ = id => document.getElementById(id);
   const el = (tag, text, cls) => { const n = document.createElement(tag); if (text) n.textContent = text; if (cls) n.className = cls; return n; };
-  const palettes = { gold: 'Midnight gold', ocean: 'Ocean', forest: 'Forest', rose: 'Rose', violet: 'Violet', daylight: 'Daylight', liquid: 'Liquid glass' };
+  const palettes = { graphite: 'Graphite', gold: 'Midnight gold', ocean: 'Ocean', forest: 'Forest', rose: 'Rose', violet: 'Violet', daylight: 'Daylight', liquid: 'Liquid glass', whiteglass: 'White glass' };
   const bar = el('div', '', 'tc-room-tools');
   bar.innerHTML = '<span id="tc-connection-label" class="tc-connection-label" role="status">Connecting…</span>';
   document.querySelector('.chat-header')?.after(bar);
@@ -224,7 +224,7 @@
   });
   const guide = document.querySelector('.guide-sections');
   if (guide) {
-    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts & shared themes'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Settings → Shared themes & wallpaper: pick a theme (including Liquid glass), or add a photo — crop it for phones or laptops with a live preview that shows exactly how the room will look, and use “Colours from photo” to build a theme from the photo’s two main colours. Everything applies to everyone in the room and lasts only for this room. The server relays content: this is not end-to-end encrypted; wallpapers, colours, brief reply summaries and receipt metadata are temporarily kept in memory.'));
+    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts & shared themes'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Settings → Shared themes & wallpaper: pick a theme (Graphite by default; Midnight gold, Liquid glass, White glass and more), or add a photo — crop it for phones or laptops with a live preview that shows exactly how the room will look, and use “Colours from photo” to build a theme from the photo’s two main colours. Everything applies to everyone in the room and lasts only for this room. The server relays content: this is not end-to-end encrypted; wallpapers, colours, brief reply summaries and receipt metadata are temporarily kept in memory.'));
     guide.prepend(item);
   }
 })();

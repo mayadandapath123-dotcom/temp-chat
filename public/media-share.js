@@ -46,7 +46,7 @@
   async function fromVideo(file) {
     const url = URL.createObjectURL(file);
     const video = document.createElement('video');
-    video.src = url; video.muted = true; video.loop = true; video.playsInline = true; video.setAttribute('playsinline', ''); video.preload = 'auto';
+    video.src = url; video.loop = true; video.playsInline = true; video.setAttribute('playsinline', ''); video.preload = 'auto'; video.volume = 1;
     video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10px;top:-10px';
     document.body.append(video);
     await new Promise((resolve, reject) => {
@@ -54,13 +54,24 @@
       video.onloadedmetadata = () => { clearTimeout(timer); resolve(); };
       video.onerror = () => { clearTimeout(timer); reject(new Error('This video format is not supported here.')); };
     });
-    try { await video.play(); } catch (_) { video.remove(); URL.revokeObjectURL(url); throw new Error('Tap Share again to allow the video to play.'); }
+    // The video's own sound: captured into the share stream and also played here so you can follow along.
+    let actx = null, audioTracks = [];
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      try {
+        actx = new AC(); if (actx.state === 'suspended') await actx.resume();
+        const src = actx.createMediaElementSource(video), dest = actx.createMediaStreamDestination();
+        src.connect(dest); src.connect(actx.destination); audioTracks = dest.stream.getAudioTracks();
+      } catch (_) { try { actx && actx.close(); } catch (__) {} actx = null; video.muted = true; }
+    } else video.muted = true;
+    try { await video.play(); } catch (_) { try { actx && actx.close(); } catch (__) {} video.remove(); URL.revokeObjectURL(url); throw new Error('Tap Share again to allow the video to play.'); }
     const { w, h } = fit(video.videoWidth || 640, video.videoHeight || 360);
     const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d', { alpha: false });
     const stream = canvas.captureStream(VIDEO_FPS);
+    for (const t of audioTracks) stream.addTrack(t);
     const timer = setInterval(() => { if (!video.paused && !video.ended) ctx.drawImage(video, 0, 0, w, h); }, Math.round(1000 / VIDEO_FPS));
-    return { kind: 'video', stream, stop() { clearInterval(timer); stream.getTracks().forEach(t => t.stop()); try { video.pause(); } catch (_) {} video.remove(); URL.revokeObjectURL(url); } };
+    return { kind: 'video', stream, stop() { clearInterval(timer); stream.getTracks().forEach(t => t.stop()); try { video.pause(); } catch (_) {} video.remove(); URL.revokeObjectURL(url); try { actx && actx.close(); } catch (_) {} } };
   }
 
   async function pick() {

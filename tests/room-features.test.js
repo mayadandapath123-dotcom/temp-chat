@@ -69,13 +69,13 @@ test('shared theme: binary wallpaper, validation, throttling, late join, empty r
   const ids = [a.id,b.id,c.id]; [a,b,c].forEach(s => s.disconnect()); await wait(100);
   const d = io(base, { transports: ['websocket'], forceNew: true }); sockets.push(d); await event(d, 'connect');
   const fresh = event(d, 'room-theme'); d.emit('join-room', { room: 'THEMES', username: 'D' }); const reset = await fresh;
-  assert.equal(reset.palette, 'gold'); assert.equal(reset.wallpaper, null);
+  assert.equal(reset.palette, 'graphite'); assert.equal(reset.wallpaper, null);
 });
 test('reset clears receipts and shared wallpaper', async () => {
   const a = await connect('RESET', 'A'), b = await connect('RESET', 'B'); const msg = await message(a); await wait(50);
   await ack(a, 'set-room-theme', { palette:'rose', shade:60, wallpaperAction:'keep' });
-  const theme = event(b, 'room-theme', d => d.palette === 'gold'), cleared = event(b, 'clear-chat');
-  a.emit('reset-chat'); assert.equal((await theme).palette, 'gold'); await cleared;
+  const theme = event(b, 'room-theme', d => d.palette === 'graphite'), cleared = event(b, 'clear-chat');
+  a.emit('reset-chat'); assert.equal((await theme).palette, 'graphite'); await cleared;
   let updated = false; a.on('message-status', () => updated = true); b.emit('message-receipts', { ids:[msg.id], kind:'seen' }); await wait(300); assert.equal(updated,false);
 });
 test('existing calls relay media only to active participants; presence and typing still work', async () => {

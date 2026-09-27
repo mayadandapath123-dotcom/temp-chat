@@ -120,6 +120,34 @@ async function broadcastPresence(room) {
   io.to(room).emit("presence-update", people);
 }
 
+// Call quality: each participant offers a cap (0 = Auto, which shrinks as the call grows).
+// Everyone sends at the lowest offer so the person on the weakest connection truly saves data both ways.
+const QUALITY_DIMS = new Set([0, 256, 426, 640, 854, 1280]);
+function autoQualityDim(count) { return count <= 2 ? 400 : count <= 4 ? 320 : count <= 6 ? 256 : 200; }
+function callQualityState(room) {
+  const roomCall = calls.get(room);
+  if (!roomCall || !roomCall.size) return null;
+  const auto = autoQualityDim(roomCall.size);
+  let effective = Infinity, limitedBy = [];
+  for (const info of roomCall.values()) {
+    const offer = info.quality > 0 ? info.quality : auto;
+    if (offer < effective) { effective = offer; limitedBy = info.quality > 0 ? [info.username] : []; }
+    else if (offer === effective && info.quality > 0) limitedBy.push(info.username);
+  }
+  return { effective, auto, participants: roomCall.size, limitedBy, choices: Object.fromEntries([...roomCall.entries()].map(([id, info]) => [id, info.quality || 0])) };
+}
+function broadcastCallQuality(room) {
+  const state = callQualityState(room); if (!state) return;
+  const roomCall = calls.get(room);
+  for (const id of roomCall.keys()) io.to(id).emit("call-quality-state", state);
+}
+function broadcastSpotlight(room) {
+  const roomCall = calls.get(room); if (!roomCall) return;
+  const spot = callSpotlight.get(room) || null;
+  if (spot && !roomCall.has(spot.id)) { callSpotlight.delete(room); return broadcastSpotlight(room); }
+  for (const id of roomCall.keys()) io.to(id).emit("call-spotlight-state", spot ? { id: spot.id, username: roomCall.get(spot.id)?.username || "", by: spot.by } : { id: null });
+}
+const callSpotlight = new Map(); // room -> { id, by }
 function broadcastCallStatus(room) {
   if (!room) return;
   const roomCall = calls.get(room);
@@ -158,9 +186,9 @@ function removeFromCall(socket) {
   socket.to(socket.room).emit("call-peer-left", { id: socket.id });
 
   if (roomCall.size === 0) {
-    calls.delete(socket.room);
+    calls.delete(socket.room); callSpotlight.delete(socket.room);
     io.to(socket.room).emit("call-ended");
-  }
+  } else { broadcastCallQuality(socket.room); broadcastSpotlight(socket.room); }
   broadcastCallStatus(socket.room);
 }
 
@@ -421,7 +449,9 @@ io.on("connection", (socket) => {
       callType,
       videoEnabled: data.videoEnabled !== false && callType === "video",
       audioEnabled: true,
+      quality: QUALITY_DIMS.has(Number(data.quality)) ? Number(data.quality) : 0,
     });
+    broadcastCallQuality(socket.room);
 
     socket.to(socket.room).emit("call-start", {
       by: socket.username,
@@ -450,6 +480,7 @@ io.on("connection", (socket) => {
       callType,
       videoEnabled: data.videoEnabled !== false && callType === "video",
       audioEnabled: data.audioEnabled !== false,
+      quality: QUALITY_DIMS.has(Number(data.quality)) ? Number(data.quality) : 0,
     });
 
     const existingPeers = [...roomCall.entries()]
@@ -464,6 +495,7 @@ io.on("connection", (socket) => {
       }));
 
     io.to(socket.id).emit("call-peers", existingPeers);
+    broadcastCallQuality(socket.room); broadcastSpotlight(socket.room);
 
     existingPeers.forEach(({ id }) => {
       io.to(id).emit("call-peer-joined", {
@@ -539,6 +571,26 @@ io.on("connection", (socket) => {
   // 6. Leave Call
   socket.on("call-leave", () => {
     removeFromCall(socket);
+  });
+
+  // Quality cap for this participant (0 = Auto). The call runs at the lowest cap.
+  socket.on("call-quality", (data = {}) => {
+    const roomCall = socket.room && calls.get(socket.room);
+    if (!roomCall || !roomCall.has(socket.id)) return;
+    const q = Number(data.maxDim);
+    if (!QUALITY_DIMS.has(q)) return;
+    roomCall.get(socket.id).quality = q;
+    broadcastCallQuality(socket.room);
+  });
+
+  // Pin one participant for everyone in the call (or clear it).
+  socket.on("call-spotlight", (data = {}) => {
+    const roomCall = socket.room && calls.get(socket.room);
+    if (!roomCall || !roomCall.has(socket.id)) return;
+    const id = typeof data.id === "string" ? data.id : null;
+    if (id && !roomCall.has(id)) return;
+    if (id) callSpotlight.set(socket.room, { id, by: socket.username }); else callSpotlight.delete(socket.room);
+    broadcastSpotlight(socket.room);
   });
 
   // Reset Chat
