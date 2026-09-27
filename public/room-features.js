@@ -8,7 +8,7 @@
   let detailId = null;
   const $ = id => document.getElementById(id);
   const el = (tag, text, cls) => { const n = document.createElement(tag); if (text) n.textContent = text; if (cls) n.className = cls; return n; };
-  const palettes = { gold: 'Midnight gold', ocean: 'Ocean', forest: 'Forest', rose: 'Rose', violet: 'Violet', daylight: 'Daylight' };
+  const palettes = { gold: 'Midnight gold', ocean: 'Ocean', forest: 'Forest', rose: 'Rose', violet: 'Violet', daylight: 'Daylight', liquid: 'Liquid glass' };
   const bar = el('div', '', 'tc-room-tools');
   bar.innerHTML = '<span id="tc-connection-label" class="tc-connection-label" role="status">Connecting…</span>';
   document.querySelector('.chat-header')?.after(bar);
@@ -163,8 +163,9 @@
 
   // Appearance is shared server state. A wallpaper is sent once per change/join.
   socket.on('room-theme', data => {
-    theme = { palette: data.palette, shade: data.shade };
-    document.documentElement.dataset.roomTheme = data.palette;
+    theme = { palette: data.palette, shade: data.shade, colors: Array.isArray(data.colors) ? data.colors : null };
+    if (window.TempChatThemeStudio) window.TempChatThemeStudio.applyPalette(document.documentElement, data.palette, theme.colors);
+    else document.documentElement.dataset.roomTheme = data.palette;
     if (Object.prototype.hasOwnProperty.call(data, 'wallpaper')) {
       if (wallpaperURL) URL.revokeObjectURL(wallpaperURL);
       wallpaperURL = data.wallpaper ? URL.createObjectURL(new Blob([data.wallpaper], { type: 'image/jpeg' })) : null;
@@ -195,56 +196,13 @@
   }
   function showThemes() {
     const body = open('Make the room yours', 'theme');
-    note(body, 'One room, one look. Any member can update the theme and photo wallpaper for everyone, including new arrivals.');
-    let selected = theme.palette, shade = theme.shade, action = 'keep', photo = null, busy = false, job = 0, draftURL = null;
-    const preview = el('div', '', 'tc-theme-preview');
-    preview.dataset.roomTheme = selected;
-    preview.innerHTML = '<span class="tc-eyebrow">LIVE PREVIEW · NOT APPLIED YET</span><div class="tc-preview-bubble">A little more you.</div><div class="tc-preview-own">A shared space for everyone ✦</div>';
-    body.append(preview);
-    function updatePreview() {
-      preview.dataset.roomTheme = selected;
-      const image = action === 'remove' ? null : draftURL || wallpaperURL;
-      preview.style.backgroundImage = image ? `linear-gradient(rgba(0,0,0,${shade/100}),rgba(0,0,0,${shade/100})),url("${image}")` : '';
-    }
-    updatePreview();
-    const grid = el('div', '', 'tc-theme-grid'); body.append(grid);
-    for (const [key, title] of Object.entries(palettes)) {
-      const b = button(grid, title, () => {
-        selected = key;
-        for (const n of grid.children) n.setAttribute('aria-pressed', String(n.dataset.palette === key));
-        updatePreview();
-      }, 'tc-theme-choice');
-      b.dataset.palette = key; b.dataset.roomTheme = key; b.setAttribute('aria-pressed', String(key === selected));
-    }
-    const label = el('label', 'Photo wallpaper', 'tc-field-label'); const input = el('input');
-    input.type = 'file'; input.accept = 'image/jpeg,image/png,image/webp,image/avif'; label.append(input); body.append(label);
-    const info = el('p', 'Compressed to at most 220 KB. Wallpaper photos are visible to everyone, not view-once.', 'tc-note'); body.append(info);
-    const shadeLabel = el('label', '', 'tc-field-label'); const shadeText = el('span', `Wallpaper dark overlay · ${shade}%`); const range = el('input');
-    range.type = 'range'; range.min = '20'; range.max = '85'; range.value = shade; range.setAttribute('aria-label', 'Wallpaper dark overlay');
-    shadeLabel.append(shadeText, range); body.append(shadeLabel);
-    range.oninput = () => { shade = Number(range.value); shadeText.textContent = `Wallpaper dark overlay · ${shade}%`; updatePreview(); };
-    const actions = el('div', '', 'tc-actions'); body.append(actions);
-    button(actions, 'Remove wallpaper', () => { job++; busy = false; apply.disabled = false; photo = null; action = 'remove'; input.value = ''; if (draftURL) URL.revokeObjectURL(draftURL); draftURL = null; info.textContent = 'Wallpaper will be removed when you apply.'; updatePreview(); }, 'tc-button tc-secondary');
-    const apply = button(actions, 'Apply for everyone', async () => {
-      if (busy) return;
-      apply.disabled = true;
-      try {
-        await request('set-room-theme', { palette: selected, shade, wallpaperAction: action, ...(photo && action === 'replace' ? { wallpaper: await photo.arrayBuffer() } : {}) });
-        if (dialogMode === 'theme') dialog.close(); showToast('Room appearance updated for everyone.');
-      } catch (e) { info.textContent = e.message; } finally { apply.disabled = false; }
+    note(body, 'One room, one look. Any member can update the theme, wallpaper and colours for everyone, including new arrivals.');
+    if (!window.TempChatThemeStudio) { note(body, 'Theme tools failed to load. Reload the page and try again.', true); return; }
+    const cleanup = window.TempChatThemeStudio.open({
+      body, request, note, button, palettes, theme, wallpaperURL,
+      onApplied() { if (dialogMode === 'theme') dialog.close(); showToast('Room appearance updated for everyone.'); },
     });
-    input.onchange = async () => {
-      const file = input.files[0]; if (!file) return;
-      const myJob = ++job; busy = true; apply.disabled = true; info.textContent = 'Compressing your photo…';
-      try {
-        const blob = await compressWallpaper(file); if (myJob !== job) return;
-        photo = blob; action = 'replace'; if (draftURL) URL.revokeObjectURL(draftURL); draftURL = URL.createObjectURL(blob);
-        info.textContent = `Ready · ${Math.ceil(blob.size / 1024)} KB. Visible to everyone, not view-once.`; updatePreview();
-      } catch (e) { if (myJob === job) { photo = null; action = 'keep'; info.textContent = e.message; } }
-      finally { if (myJob === job) { busy = false; apply.disabled = false; } }
-    };
-    dialog.addEventListener('close', () => { job++; if (draftURL) URL.revokeObjectURL(draftURL); }, { once: true });
-    note(body, 'No upload to a photo-hosting service. The room keeps its wallpaper in server memory until everyone leaves, the room is reset, or the server restarts.');
+    dialog.addEventListener('close', () => { try { cleanup(); } catch (_) {} }, { once: true });
   }
 
   const menu = document.querySelector('#more-sheet .more-sheet-actions');
@@ -266,7 +224,7 @@
   });
   const guide = document.querySelector('.guide-sections');
   if (guide) {
-    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts & shared themes'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Settings → Shared themes & wallpaper for shared colours and a compressed photo wallpaper. The server relays content: this is not end-to-end encrypted. Wallpapers, brief reply summaries and receipt metadata are temporarily kept in memory; no new chat history is written to a database.'));
+    const item = el('div', '', 'guide-section-item'); item.append(el('h5', '✓ Receipts & shared themes'), el('p', 'Tap an outgoing message status for per-person delivery and visibility. Open Settings → Shared themes & wallpaper: pick a theme (including Liquid glass), or add a photo — crop it for phones or laptops with a live preview that shows exactly how the room will look, and use “Colours from photo” to build a theme from the photo’s two main colours. Everything applies to everyone in the room and lasts only for this room. The server relays content: this is not end-to-end encrypted; wallpapers, colours, brief reply summaries and receipt metadata are temporarily kept in memory.'));
     guide.prepend(item);
   }
 })();

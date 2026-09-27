@@ -1,0 +1,133 @@
+/* Call screen — calm, professional layout for phones and desktops.
+   Loaded after every other stylesheet; overrides the older call rules without
+   removing any control. Tile sizes come from call-ui.js (--tc-tile-w/h). */
+
+.call-screen { padding: 0 !important; background: #0a0b0f !important; }
+
+/* ---------- Top bar ---------- */
+.call-screen-header {
+  flex: 0 0 auto; display: flex !important; flex-wrap: nowrap !important; align-items: center; gap: 8px !important;
+  margin: 0 !important; min-height: 52px;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 8px !important;
+  background: linear-gradient(#0a0b0f, #0a0b0fcc 70%, transparent); z-index: 3;
+}
+.call-header-info { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; gap: 1px; }
+.call-eyebrow { font-size: 9px !important; letter-spacing: .14em !important; opacity: .9; white-space: nowrap; }
+.call-room-label { font-size: 14px !important; font-weight: 800 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.call-header-right { display: flex; align-items: center; gap: 6px !important; flex: 0 0 auto; }
+.call-timer { padding: 5px 9px !important; font-size: 11px !important; font-variant-numeric: tabular-nums; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 99px; }
+.call-mini-btn { width: 34px !important; height: 34px !important; border: 1px solid rgba(255,255,255,.12) !important; background: rgba(255,255,255,.06) !important; }
+.call-screen-header .tc-refresh-trigger,
+.call-screen-header .tc-exit-room {
+  height: 34px; padding: 0 12px !important; border-radius: 99px !important; font-size: 12px !important; font-weight: 700 !important;
+  display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+}
+.call-screen-header .tc-refresh-trigger { color: #e6e8ee !important; background: rgba(255,255,255,.06) !important; border: 1px solid rgba(255,255,255,.12) !important; text-decoration: none; }
+.call-screen-header .tc-exit-room { color: #ffd6d6 !important; background: rgba(255,80,80,.14) !important; border: 1px solid rgba(255,110,110,.35) !important; }
+
+/* ---------- Stage ---------- */
+.tc-stage { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#video-grid.video-grid {
+  position: relative; flex: 1 1 auto !important; min-height: 0; max-width: none !important; margin: 0 !important;
+  display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; align-content: center; align-items: center; justify-content: center;
+  gap: var(--tc-gap, 6px) !important; padding: 4px 6px !important; overflow: hidden;
+  grid-template-columns: none !important; grid-template-rows: none !important;
+}
+#video-grid .video-tile {
+  flex: 0 0 auto !important; position: relative; overflow: hidden; box-sizing: border-box;
+  width: var(--tc-tile-w, 100%) !important; height: var(--tc-tile-h, 100%) !important; min-height: 0 !important;
+  border-radius: 14px !important; background: #12141b !important; border: 1px solid rgba(255,255,255,.07) !important;
+  box-shadow: none !important; opacity: 1 !important; transition: box-shadow .25s ease, border-color .25s ease, width .2s ease, height .2s ease;
+}
+.video-tile.speaking { border-color: rgba(255,255,255,.14) !important; box-shadow: inset 0 0 0 2px var(--accent, #d4af37) !important; }
+.video-tile video, .video-tile .remote-frame-feed { width: 100% !important; height: 100% !important; object-fit: cover !important; background: #12141b !important; }
+.video-tile.fit-contain video, .video-tile.fit-contain .remote-frame-feed { object-fit: contain !important; background: #000 !important; }
+.video-tile.self-tile.mirrored video { transform: scaleX(-1); }
+
+.video-tile-tag {
+  bottom: 8px !important; left: 8px !important; padding: 4px 9px !important; gap: 5px !important;
+  font-size: 11px !important; font-weight: 600 !important; border: 0 !important;
+  background: rgba(0,0,0,.42) !important; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); max-width: calc(100% - 60px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.video-tile-tag .video-tag-icon { font-size: 11px; }
+.video-tile-tag .video-tag-icon.muted { color: #ff8f8f; }
+.speaking-wave { right: 8px !important; bottom: 8px !important; padding: 4px 7px !important; border-radius: 99px !important; background: rgba(0,0,0,.42) !important; border: 0 !important; }
+.speaking-wave i { background: #fff !important; box-shadow: none !important; }
+.tile-max-btn {
+  top: 8px !important; right: 8px !important; width: 32px !important; height: 32px !important; border-radius: 10px !important;
+  background: rgba(0,0,0,.42) !important; border: 1px solid rgba(255,255,255,.14) !important; color: #fff !important; font-size: 14px !important;
+  opacity: 0 !important; transition: opacity .2s ease, transform .15s ease;
+}
+.video-tile:hover .tile-max-btn, .video-tile.pinned .tile-max-btn, .tc-touch .tile-max-btn { opacity: .85 !important; }
+.tile-share-badge {
+  position: absolute; top: 8px; left: 8px; z-index: 5; padding: 3px 8px; border-radius: 99px; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  color: #0e0f14; background: var(--accent-light, #f3df9b); display: none;
+}
+.video-tile.is-sharing .tile-share-badge { display: inline-flex; }
+.video-tile-avatar { background: radial-gradient(circle at 50% 40%, rgba(255,255,255,.05), #12141b 70%) !important; }
+.avatar-circle { width: 56px !important; height: 56px !important; border: 0 !important; font-size: 18px !important; }
+.avatar-status-hint { font-size: 10px !important; }
+
+/* Pinned: one big tile plus a thumbnail strip (nothing is hidden). */
+#video-grid.has-pinned { align-content: flex-start; }
+#video-grid.has-pinned .video-tile { display: flex !important; order: 1; width: var(--tc-thumb-w, 120px) !important; height: var(--tc-thumb-h, 80px) !important; }
+#video-grid.has-pinned .video-tile.pinned { order: 0; width: 100% !important; height: var(--tc-pinned-h, 100%) !important; }
+.video-grid.has-pinned .video-tile.pinned img, .video-grid.has-pinned .video-tile.pinned video { object-fit: contain !important; background: #000 !important; }
+.video-grid.has-pinned .video-tile:not(.pinned) .video-tile-tag { padding: 2px 6px !important; font-size: 9.5px !important; bottom: 5px !important; left: 5px !important; }
+.video-grid.has-pinned .video-tile:not(.pinned) .tile-max-btn, .video-grid.has-pinned .video-tile:not(.pinned) .speaking-wave, #video-grid.has-pinned .video-tile:not(.pinned) .tc-zoom-call { display: none !important; }
+
+/* Overlays that used to stack above the dock */
+.tc-stage-top { position: absolute; top: 8px; left: 0; right: 0; display: flex; justify-content: center; pointer-events: none; z-index: 6; }
+.tc-stage-top > * { pointer-events: auto; }
+.tc-stage-bottom { position: absolute; bottom: 8px; left: 0; right: 0; display: flex; justify-content: center; pointer-events: none; z-index: 6; }
+.tc-stage-bottom > * { pointer-events: auto; }
+.call-header-info .mic-status-chip {
+  margin: 1px 0 0 !important; padding: 0 !important; font-size: 10.5px !important; gap: 6px !important; max-width: 100%;
+  background: none !important; border: 0 !important; box-shadow: none !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex;
+}
+.call-header-info .mic-status-chip .chip-dot { width: 7px; height: 7px; flex: 0 0 auto; }
+.call-screen:has(.call-header-info .mic-status-chip:not(.hidden)) .call-eyebrow { display: none; }
+.tc-zoom-call { position: absolute; top: 8px; left: 8px; z-index: 6; padding: 0 !important; }
+.video-tile.tc-narrow .tc-zoom-call .tc-zoom-buttons { flex-direction: column; }
+.video-tile.tc-narrow .tc-zoom-call .tc-zoom-buttons button { width: 30px !important; height: 28px !important; font-size: 10.5px !important; }
+.tc-zoom-call .tc-zoom-buttons { gap: 2px !important; padding: 3px !important; background: rgba(10,11,15,.72) !important; border-color: rgba(255,255,255,.12) !important; }
+.tc-zoom-call .tc-zoom-buttons button { width: 34px !important; height: 30px !important; font-size: 11px !important; border-radius: 99px !important; }
+.tc-zoom-call .tc-zoom-label { display: none !important; }
+
+/* ---------- Dock ---------- */
+.call-controls.glass-dock {
+  flex: 0 0 auto; display: flex !important; flex-wrap: nowrap !important; align-items: center; justify-content: center;
+  gap: clamp(6px, 2vw, 12px) !important; width: auto !important; max-width: 100%; margin: 6px auto 0 !important;
+  padding: 8px clamp(10px, 3vw, 16px) calc(env(safe-area-inset-bottom, 0px) + 10px) !important;
+  border-radius: 24px 24px 0 0 !important; background: rgba(14,15,20,.92) !important; border: 1px solid rgba(255,255,255,.08) !important; border-bottom: 0 !important;
+  box-shadow: 0 -10px 30px rgba(0,0,0,.35) !important; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+}
+@media (min-width: 761px) {
+  .call-controls.glass-dock { border-radius: 99px !important; border-bottom: 1px solid rgba(255,255,255,.08) !important; margin: 8px auto 10px !important; padding: 8px 14px !important; }
+}
+.call-ctl {
+  width: clamp(40px, 11vw, 48px) !important; height: clamp(40px, 11vw, 48px) !important; border-radius: 50% !important;
+  background: rgba(255,255,255,.08) !important; border: 1px solid rgba(255,255,255,.1) !important; color: #fff !important;
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; transition: background .15s ease, transform .1s ease;
+}
+.call-ctl:active { transform: scale(.94); }
+.call-ctl svg { width: 20px; height: 20px; }
+.call-ctl.off { background: rgba(255,90,90,.18) !important; border-color: rgba(255,110,110,.4) !important; color: #ffb3b3 !important; }
+.call-ctl.active { background: var(--accent-subtle, rgba(212,175,55,.16)) !important; border-color: var(--accent-border, rgba(212,175,55,.45)) !important; color: var(--accent-light, #f3df9b) !important; }
+.call-ctl.auto-muted { border-color: rgba(255,196,84,.55) !important; }
+.call-ctl.call-leave-btn { width: clamp(56px, 15vw, 68px) !important; border-radius: 99px !important; background: #e5484d !important; border-color: #e5484d !important; color: #fff !important; }
+.call-ctl.call-leave-btn:hover { background: #f05257 !important; }
+.call-chat-unread-badge { top: -3px !important; right: -3px !important; }
+
+/* Touch devices: tighter header text, icon-only helpers (call-ui.js shortens labels) */
+@media (max-width: 760px) {
+  .call-room-label { font-size: 13px !important; }
+  .call-screen-header .tc-refresh-trigger { width: 34px; padding: 0 !important; }
+  .call-screen-header .tc-exit-room { padding: 0 11px !important; }
+  #video-grid.video-grid { padding: 2px 6px 6px !important; }
+}
+@media (max-height: 480px) and (orientation: landscape) {
+  .call-screen-header { min-height: 40px; padding-top: 4px !important; padding-bottom: 4px !important; }
+  .call-controls.glass-dock { padding-top: 5px !important; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 5px) !important; margin-top: 2px !important; }
+  .call-ctl { width: 38px !important; height: 38px !important; }
+}

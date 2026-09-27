@@ -40,7 +40,7 @@
   function injectCreateOptions() {
     const form = $('join-form'); if (!form || $('tc-room-options')) return;
     const details = document.createElement('details'); details.id = 'tc-room-options'; details.className = 'tc-room-options';
-    details.innerHTML = '<summary>⚙️ New-room options (optional)</summary>' +
+    details.innerHTML = '<summary><span>New room options</span><span class="tc-muted">optional · name · private · quick delete</span></summary>' +
       '<label class="field-label">Room name <span class="tc-muted">(shown to everyone)</span>' +
       '<input id="tc-room-name-input" type="text" maxlength="40" placeholder="e.g. Weekend Hangout" autocomplete="off"></label>' +
       '<label class="field-label">Who can join by room code' +
@@ -242,16 +242,31 @@
   }
   function myVote(votes) { return (Array.isArray(votes) ? votes : []).find(v => v.id === socket.id)?.vote === true; }
 
-  // ---- Private join: requester-side pending, member-side approval ----
+  // ---- Private join: requester-side waiting panel, member-side approval ----
+  function pendingPanel() {
+    let panel = $('tc-join-pending');
+    if (panel) return panel;
+    panel = el('div', '', 'tc-join-pending'); panel.id = 'tc-join-pending'; panel.setAttribute('role', 'status'); panel.setAttribute('aria-live', 'polite');
+    panel.innerHTML = '<div class="tc-pending-spinner" aria-hidden="true"></div><h3>Waiting for approval</h3><p class="tc-pending-text"></p><p class="tc-pending-progress"></p>' +
+      '<button type="button" class="tc-button tc-secondary tc-pending-cancel">Cancel request</button>';
+    panel.querySelector('.tc-pending-cancel').onclick = () => { socket.emit('join-cancel'); leavePending(); showToast('Join request cancelled.'); };
+    const form = $('join-form'); (form ? form.parentNode : $('join-screen')).insertBefore(panel, form || null);
+    return panel;
+  }
   function showPendingBanner(data) {
-    let banner = $('tc-join-pending');
-    if (!banner) {
-      banner = el('div', '', 'tc-join-pending'); banner.id = 'tc-join-pending';
-      $('join-screen')?.append(banner);
-    }
+    const panel = pendingPanel();
     const done = Number(data.approved) || 0, total = Number(data.memberCount) || 0;
-    banner.textContent = `Waiting for the members of #${data.room} to approve your request` + (total ? ` (${done} of ${total} approved)` : '') + '. You’ll enter automatically once everyone approves.';
-    banner.classList.remove('hidden');
+    panel.querySelector('.tc-pending-text').textContent = `#${data.room} is a private room. Its members have been asked to let you in; you’ll enter automatically once everyone approves.`;
+    panel.querySelector('.tc-pending-progress').textContent = total ? `${done} of ${total} approved` : '';
+    panel.classList.remove('hidden');
+    $('join-form')?.classList.add('hidden'); $('invite-banner')?.classList.add('tc-pending-hide');
+    document.querySelector('.join-card')?.classList.add('tc-is-pending');
+  }
+  function leavePending() {
+    state.pending = null;
+    $('tc-join-pending')?.classList.add('hidden');
+    $('join-form')?.classList.remove('hidden'); $('invite-banner')?.classList.remove('tc-pending-hide');
+    document.querySelector('.join-card')?.classList.remove('tc-is-pending');
   }
   function enterPending(data) {
     const first = !state.pending?.active;
@@ -260,10 +275,11 @@
     if (!first) return;
     joinedChat = false; clearInterval(presenceHeartbeat);
     chatScreen?.classList.add('hidden'); joinScreen?.classList.remove('hidden');
-    showToast('This room is private. Your join request was sent to its members.');
+    // The optimistic "Joined Room" toast is wrong while approval is pending.
+    document.querySelectorAll('.toast').forEach(t => { if (/Joined Room/i.test(t.textContent)) t.remove(); });
   }
   function finalizeJoin() {
-    state.pending = null; $('tc-join-pending')?.classList.add('hidden');
+    leavePending();
     joinedChat = true;
     joinScreen?.classList.add('hidden'); chatScreen?.classList.remove('hidden');
     startPresenceHeartbeat(); sendPresence('active');
@@ -309,7 +325,7 @@
   });
   socket.on('room-history', data => { if (data?.room === currentRoom) renderHistory(data.entries); });
   socket.on('join-pending', enterPending);
-  socket.on('join-error', () => { state.pending = null; $('tc-join-pending')?.classList.add('hidden'); });
+  socket.on('join-error', () => leavePending());
   socket.on('room-ready', data => {
     if (state.pending?.active && data?.room === state.pending.room) finalizeJoin();
     else renderIdentity();

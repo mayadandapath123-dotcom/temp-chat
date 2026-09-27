@@ -263,6 +263,13 @@ io.on("connection", (socket) => {
     admit(socket, { username, room, moderator, deviceId });
   });
 
+  // The person waiting outside a private room can withdraw the request.
+  socket.on("join-cancel", () => {
+    if (socket.room || !socket.pendingRoom) return;
+    lifecycle.cancelRequester(socket.pendingRoom, socket.id);
+    socket.pendingRoom = null;
+  });
+
   // Private room join approval
   socket.on("join-vote", (data = {}) => {
     if (!socket.room) return;
@@ -453,6 +460,7 @@ io.on("connection", (socket) => {
         callType: info.callType,
         videoEnabled: info.videoEnabled,
         audioEnabled: info.audioEnabled,
+        sharing: info.sharing === true,
       }));
 
     io.to(socket.id).emit("call-peers", existingPeers);
@@ -518,11 +526,13 @@ io.on("connection", (socket) => {
     const userCallInfo = roomCall.get(socket.id);
     if (typeof data.video === "boolean") userCallInfo.videoEnabled = data.video;
     if (typeof data.audio === "boolean") userCallInfo.audioEnabled = data.audio;
+    if (typeof data.sharing === "boolean") userCallInfo.sharing = data.sharing; // screen / photo / video share: viewers letterbox instead of cropping
 
     socket.to(socket.room).emit("call-peer-media-state", {
       id: socket.id,
       video: userCallInfo.videoEnabled,
       audio: userCallInfo.audioEnabled,
+      sharing: userCallInfo.sharing === true,
     });
   });
 

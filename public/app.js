@@ -3543,25 +3543,38 @@ socket.on("disconnect", () => {
   /* ---------------------------------------------------------------
      10. SCREEN SHARE
   --------------------------------------------------------------- */
-  let screenStream = null, cameraStreamBackup = null, screenShareButton = null;
+  let screenStream = null, cameraStreamBackup = null, screenShareButton = null, shareCleanup = null, shareBusy = false;
   window.__isScreenSharing = false;
+  // Phones and tablets cannot capture their screen from a browser (no getDisplayMedia on
+  // Android Chrome, iPhone or iPad). There, Share offers a photo or video from the device instead.
+  const PHONE_LIKE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  const canCaptureScreen = !PHONE_LIKE && navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === "function";
 
   async function startScreenShare() {
     if (!inCall) return showToast("Join a call first.");
     if (cameraSwitchBusy) return showToast("Wait for the camera to finish switching.");
-    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== "function") {
-      return showToast("Screen sharing isn't supported on phones. Use a laptop.");
-    }
+    if (shareBusy) return;
+    shareBusy = true;
+    let picked = null;
     try {
-      screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 8, max: 12 } }, audio: false,
-      });
-    } catch (err) {
-      if (err && err.name === "NotAllowedError") return;
-      return showToast("Could not start screen sharing.");
-    }
+      if (canCaptureScreen) {
+        try {
+          screenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { frameRate: { ideal: 8, max: 12 } }, audio: false,
+          });
+        } catch (err) {
+          if (err && err.name === "NotAllowedError") return;
+          return showToast("Could not start screen sharing.");
+        }
+      } else {
+        if (!window.TempChatMediaShare) return showToast("Sharing is not available on this device.");
+        picked = await window.TempChatMediaShare.pick();
+        if (!picked) return;
+        screenStream = picked.stream; shareCleanup = picked.stop;
+      }
+    } finally { shareBusy = false; }
 
-    if (window.__tempChatExiting || !inCall) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; return; }
+    if (window.__tempChatExiting || !inCall) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; if (shareCleanup) { shareCleanup(); shareCleanup = null; } return; }
     cameraStreamBackup = localStream;
     window.__isScreenSharing = true;
     isCameraOff = false;
@@ -3574,8 +3587,8 @@ socket.on("disconnect", () => {
     window.__activeVideoQuality = SCREEN_SHARE_QUALITY;
 
     if (screenShareButton) screenShareButton.classList.add("active");
-    socket.emit("call-media-state", { video: true, audio: !isMicMuted });
-    showToast("Screen sharing started.");
+    socket.emit("call-media-state", { video: true, audio: !isMicMuted, sharing: true });
+    showToast(picked ? (picked.kind === "video" ? "Sharing your video with the call (no sound). Tap Share again to stop." : "Sharing your photo with the call. Tap Share again to stop.") : "Screen sharing started.");
 
     const track = screenStream.getVideoTracks()[0];
     if (track) track.addEventListener("ended", stopScreenShare);
@@ -3585,6 +3598,7 @@ socket.on("disconnect", () => {
     if (!window.__isScreenSharing) return;
     window.__isScreenSharing = false;
     if (screenStream) { screenStream.getTracks().forEach((t) => t.stop()); screenStream = null; }
+    if (shareCleanup) { try { shareCleanup(); } catch (e) {} shareCleanup = null; }
 
     window.__activeVideoMaxDim = VIDEO_MAX_DIM;
     window.__activeVideoQuality = VIDEO_JPEG_QUALITY;
@@ -3598,8 +3612,8 @@ socket.on("disconnect", () => {
     }
     isCameraOff = !hasCam;
     if (screenShareButton) screenShareButton.classList.remove("active");
-    socket.emit("call-media-state", { video: !isCameraOff, audio: !isMicMuted });
-    showToast("Screen sharing stopped.");
+    socket.emit("call-media-state", { video: !isCameraOff, audio: !isMicMuted, sharing: false });
+    showToast("Sharing stopped.");
   }
 
   (function addShareBtn() {
@@ -3611,7 +3625,7 @@ socket.on("disconnect", () => {
     btn.id = "screen-share-button";
     btn.type = "button";
     btn.className = "call-ctl glass-ctl";
-    btn.title = "Share your screen";
+    btn.title = canCaptureScreen ? "Share your screen" : "Share a photo or video with the call";
     btn.innerHTML = '<svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor">' +
       '<path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>' +
       '<path d="M12 8l-4 4h2.5v3h3v-3H16l-4-4z"/></svg>';
@@ -3950,8 +3964,8 @@ socket.on("disconnect", () => {
       section("🎚️", "Mic Sensitivity (noisy rooms)", "In <strong>⋯ Settings</strong>. TempChat learns your room&rsquo;s background noise and only counts sound that rises clearly above it. If a loud room keeps you un-muted, drag the slider toward <strong>Noisy room</strong>. If your voice gets missed, drag toward <strong>Quiet room</strong>. The live meter shows your level and the white line is the speech threshold &mdash; talk and watch it turn green. <strong>Calibrate</strong> measures your room in 2 seconds of silence.") +
       section("📞", "Auto Listen", "In <strong>⋯ Settings</strong>. Incoming calls answer themselves — no Accept tap. It answers voice-only on purpose, so your camera never switches on without you knowing.") +
       section("🟢", "Who's Talking", "Whoever is speaking gets a <strong>green glowing ring</strong> and animated bars on their tile. This costs no extra data at all — TempChat already only sends audio while somebody is actually talking, so the glow rides along with the sound.") +
-      section("⛶", "Maximize Someone", "Tap the <strong>⛶</strong> button on any tile (or double-tap the tile) to blow that person up to full screen — handy for reading a shared screen. Tap <strong>✕</strong> or press <strong>Esc</strong> to go back. This is layout-only and uses no extra data.") +
-      section("🖥️", "Screen Sharing", "In a call, tap the monitor button. Works on <strong>laptops and desktops only</strong> — phone browsers are not allowed to capture the screen. Shared screens are sent sharper than webcam video, but a still screen sends almost nothing.") +
+      section("⛶", "Call layout & maximize", "Tiles arrange themselves so everyone fits on the screen, on phones and laptops. Tap <strong>⛶</strong> on a tile (or double-tap it) to make that person large while the others stay as small thumbnails — handy for a shared screen. Tap <strong>✕</strong> or press <strong>Esc</strong> to go back. Layout only, no extra data.") +
+      section("🖥️", "Share in a call", "Tap the <strong>Share</strong> button in the call. On a <strong>laptop or desktop</strong> it shares your screen. Phone and tablet browsers are not allowed to capture the screen, so there it shares a <strong>photo or video from your device</strong> instead — for example a screenshot or a screen recording you just made (videos share without sound). Everyone sees it letterboxed, never cropped. Tap Share again to stop.") +
       section("📷", "Direct Camera", "The <strong>📷</strong> button opens a real in-app camera with a live preview, shutter and front/back flip — it no longer opens your file manager. Use <strong>🖼️</strong> to pick an existing photo instead.") +
       section("①", "View-Once Photos", "Photos marked view-once self-destruct after being opened and are wiped from memory. The sender is told the moment you open one.") +
       section("🎙️", "Voice Notes", "Hold or tap the mic in the composer to record up to 60 seconds, with a scrubbable waveform.") +

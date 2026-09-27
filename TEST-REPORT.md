@@ -1,16 +1,27 @@
-# Test report — header room identity, quiet quick delete, tabbed manual, no ban duration
+# Test report — call screen redesign, phone sharing, smooth zoom, theme studio, calmer join
 
-## Automated tests: 79 passed
-`npm test` (Node built-in runner). Updated expectations: removal messages and the blocked-rejoin error contain no duration; everything else unchanged (rooms, approval, quick-delete timing, receipts, calls, camera, admin, notifications, retired-archive cleanup).
+## Automated tests: 82 passed
+`npm test` (Node built-in runner): all previous suites plus `tests/call-theme.test.js`:
+- Sharing flag relayed to viewers and to people joining the call later; cleared on stop.
+- Themes: unknown palette rejected; `custom` without valid hex colours rejected; valid photo colours broadcast (lower-cased) and sent to late joiners; Liquid glass accepted with `colors: null`.
+- Private room: cancelling a pending request closes the members’ prompt; a stale approval admits nobody; a fresh request gets a new id.
+- Zoom module: all 8 existing contracts still hold (instant in Node, animated only in browsers).
 
-## Browser check (Playwright, headless Chromium): passed
-Phone (390×780) creates a named quick-delete room; two desktops join:
-- Room identity (name over code, ⏱ flag) sits inside the header on phone and desktop, vertically in line with the call/video buttons; header does not overflow; the code is never truncated.
-- Reader's copy shows a silent shrinking line (`.tc-qd-bar`, no text) and disappears; a hidden tab keeps it; the sender's faint line starts running only after everyone has seen it; zero timer pills exist.
-- Reset shows "Bravo cleared the chat for everyone." on every screen.
-- Removal flow with 3 members: vote popup, room notice, the removed person's screen and the blocked-rejoin attempt contain no "hour"; the removed browser (same device id) cannot rejoin.
-- Manual: 4 tabs, one visible at a time; Privacy & safety is the only place that mentions the one-hour block; dead pamphlet link gone.
-- Private room: a second tab on an approved device still waits for approval; approver not re-prompted; requester sees "1 of 2 approved".
-- No page errors.
+## Browser checks (Playwright, headless Chromium with fake camera/mic): passed
+`call-browser-test.js` — phone (390×780, Android UA) + two desktops in a 3-person video call:
+- Every tile fully visible above the dock on phone and desktop; dock is one row in the fixed order; header shows Exit / mic status; zoom presets on the self tile.
+- Zoom 1×→3× passes through intermediate values and lands on 3×; pressed state immediate.
+- Maximize: one large tile plus visible thumbnails; Escape restores.
+- Phone Share opens the photo/video picker; the picked image streams; viewer tile gets `is-sharing`, letterboxing and a badge; stopping clears it. Desktop `getDisplayMedia` share still starts.
+- Manual covers phone sharing, smooth zoom, photo colours, Liquid glass. No page errors.
 
-Screenshots: `qd-countdown-mobile.png`, `qd-countdown-desktop.png`, `qd-manual-tabs.png`, `qd-manual-mobile.png`, `qd-mobile-cleared.png`, `qd-private-approval.png`.
+`theme-shots.js` — phone opens Theme studio: portrait device preview, crop tool (drag/slider), “Colours from photo” yields two distinct colours, apply → both members switch to `custom` with the cropped wallpaper; Liquid glass applies. No page errors.
+
+`join-shots.js` — simplified join card on phone and desktop; private-room waiting card with progress; Cancel restores the form and closes the member’s dialog. No page errors.
+
+`quick-delete-browser-test.js` (previous release regression) — still passing.
+
+Screenshots: `call-mobile-3.png`, `call-desktop-3.png`, `call-desktop-pinned.png`, `call-desktop-phone-share.png`, `call-mobile-sharing.png`, `theme-2-crop.png`, `theme-3-colours.png`, `theme-4-applied-mobile.png`, `theme-5-liquid-desktop.png`, `join-mobile.png`, `waiting-mobile.png`.
+
+## Not covered automatically
+Real phone cameras (portrait streams, native lens zoom ramps), iOS Safari media picking, Render cold starts. Test on your devices after deploy.

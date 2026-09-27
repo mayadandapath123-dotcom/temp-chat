@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/style.css?v=15" />
   <link rel="stylesheet" href="/room-features.css?v=15">
   <link rel="stylesheet" href="/enhancements.css?v=15">
+  <link rel="stylesheet" href="/call-ui.css?v=15">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,12 +32,11 @@
           <span class="icon-sparkle">✦</span>
           <span class="icon-bubble">💬</span>
         </div>
-        <span class="eyebrow-pill">TEMPORARY CHAT</span>
       </div>
 
       <h1 class="hero-brand-title">TempChat</h1>
       <p class="join-description">
-        Anonymous chat, multi-peer video & audio calls, view-once photos & voice notes. Temporary messages and room-based calls.
+        A private room for chat, calls and photos. It disappears when everyone leaves. No sign-up.
       </p>
 
       <!-- INVITE ONLY BANNER (Visible when opened via share link) -->
@@ -57,7 +57,7 @@
         <!-- USERNAME INPUT WITH RANDOMIZE -->
         <div class="input-group">
           <label for="username" class="field-label">
-            <span>Your Username</span>
+            <span>Your name</span>
             <button type="button" id="randomize-btn" class="randomize-btn" title="Generate random username">
               🎲 Random
             </button>
@@ -77,7 +77,7 @@
 
         <!-- ROOM CODE INPUT (Hidden when invited, visible when normal join) -->
         <div id="room-input-group" class="input-group">
-          <label for="room" class="field-label">Room Code</label>
+          <label for="room" class="field-label"><span>Room code</span><small class="tc-field-hint">make one up, or type a friend’s</small></label>
           <div class="input-wrap">
             <input
               id="room"
@@ -101,15 +101,14 @@
       </form>
 
       <div class="join-extra-links">
-        <a href="" class="text-link-btn tc-refresh-trigger" id="tc-join-refresh">↻ Refresh page</a>
-        <button type="button" id="open-guide-btn-join" class="text-link-btn">
-          📖 Read User Manual & Features Guide
-        </button>
+        <button type="button" id="open-guide-btn-join" class="text-link-btn">📖 How it works</button>
+        <span class="tc-dot-sep" aria-hidden="true">·</span>
+        <a href="" class="text-link-btn tc-refresh-trigger" id="tc-join-refresh">↻ Refresh</a>
       </div>
 
       <div class="security-footer">
         <span class="sec-dot"></span>
-        <span>Ephemeral rooms • Server-relayed</span>
+        <span>Temporary rooms · nothing is stored after you leave</span>
       </div>
     </div>
   </div>
@@ -532,6 +531,8 @@
   <script src="/camera-zoom.js?v=15"></script>
   <script src="/notifications.js?v=15"></script>
   <script src="/app.js?v=15"></script>
+  <script src="/media-share.js?v=15"></script>
+  <script src="/theme-studio.js?v=15"></script>
   <script src="/room-features.js?v=15"></script>
   <script src="/replies.js?v=15"></script>
   <script src="/zoom-ui.js?v=15"></script>
@@ -541,6 +542,7 @@
   <script src="/refresh.js?v=15"></script>
   <script src="/room-controls.js?v=15"></script>
   <script src="/manual-tabs.js?v=15"></script>
+  <script src="/call-ui.js?v=15"></script>
 </body>
 </html>
 
